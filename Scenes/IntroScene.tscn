@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://ds6tnjbuayh4j"]
+
+[ext_resource type="Script" uid="uid://dgpnnh0mplpe0" path="res://Scripts/IntroScene.cs" id="1_y0wha"]
+
+[node name="IntroScene" type="Control" unique_id=1031623472]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_y0wha")

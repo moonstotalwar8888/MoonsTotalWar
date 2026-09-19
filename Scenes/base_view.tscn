@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://b27aeibqi1qla"]
+
+[ext_resource type="Script" uid="uid://cvmv2butdm0xy" path="res://Scripts/BaseView.cs" id="1_tjy36"]
+
+[node name="BaseView" type="Node2D" unique_id=1390178208]
+script = ExtResource("1_tjy36")
+
+[node name="MainCamera" type="Camera2D" parent="." unique_id=1878693484]
+
+[node name="BuildingsContainer" type="Node2D" parent="." unique_id=583958369]
+position = Vector2(-3, 0)
+
+[node name="HUDLayer" type="CanvasLayer" parent="." unique_id=2080004521]

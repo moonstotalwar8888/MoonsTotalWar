@@ -1,0 +1,8 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+.godot/ 
+.mono/ 
+bin/ 
+obj/ 
+*.tmp 
