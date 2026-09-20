@@ -4,11 +4,11 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: CLASH OF KINGS COMMAND COCKPIT HUD (v7.0 Absolute Viewport Lock)
+	/// MOONS TOTAL WAR: CLASH OF KINGS COMMAND COCKPIT HUD (v8.0 Base Layout Edition)
 	/// - Top Bar: Commander Profile, Colony Transporter, 5 Resource Capsules, Rank Trophy.
+	/// - Edit Base Layout Toggle: [🏗️ EDIT BASE] / [💾 SAVE LAYOUT] controls.
 	/// - Side Docks: Engineering Construction Monitor, Fleet Operations Radar.
 	/// - Bottom Bar: Command Navigation Dock (Base, Moon Slots, Galaxy Map, Alliance, Comms).
-	/// Calculates physical screen pixel offsets via GetViewportRect() so the bottom bar CANNOT float off-screen.
 	/// </summary>
 	public partial class BaseHUD : Control
 	{
@@ -21,6 +21,8 @@ namespace MoonsTotalWar.Engine
 		[Signal] public delegate void LeaderboardClickedEventHandler();
 		[Signal] public delegate void SpeedupClickedEventHandler();
 		[Signal] public delegate void NavTierSelectedEventHandler(string tierName);
+		[Signal] public delegate void EditModeToggledEventHandler(bool isEditing);
+		[Signal] public delegate void SaveLayoutRequestedEventHandler();
 
 		// Colony Data
 		public string CommanderName = "COMMANDER ALPHA";
@@ -44,13 +46,17 @@ namespace MoonsTotalWar.Engine
 		public string ActiveFleetTarget = "M-100:B-04";
 		public double ActiveFleetEta = 320.0;
 
-		// UI Component References
+		// Edit Mode State
+		public bool IsEditModeActive { get; private set; } = false;
+
+		// UI Node References
 		private Panel _bottomPanelNode;
 		private Label _lblCmdName;
 		private Button _btnColonySwitch;
 		private Label _lblValE, _lblValI, _lblValT, _lblValH3, _lblValMGold;
 		private Label _lblBuildName, _lblBuildTimer, _lblQueuedCount;
 		private Label _lblFleetStatus, _lblFleetEta;
+		private Button _btnEditLayoutToggle;
 
 		private double _heartbeatTimer = 0.0;
 
@@ -58,11 +64,9 @@ namespace MoonsTotalWar.Engine
 		{
 			Instance = this;
 
-			// Force Control root to span viewport
 			SetAnchorsPreset(LayoutPreset.FullRect);
 			MouseFilter = MouseFilterEnum.Ignore;
 
-			// Listen for screen resize events to re-anchor HUD dynamically
 			GetViewport().Connect("size_changed", Callable.From(RecalculateLayoutBounds));
 
 			BuildTopCockpitBar();
@@ -99,11 +103,8 @@ namespace MoonsTotalWar.Engine
 		private void RecalculateLayoutBounds()
 		{
 			Vector2 vpSize = GetViewportRect().Size;
-			
-			// Force root control size to match monitor viewport
 			Size = vpSize;
 
-			// Reposition bottom panel to physical screen bottom
 			if (_bottomPanelNode != null)
 			{
 				_bottomPanelNode.Position = new Vector2(0, vpSize.Y - 60);
@@ -277,6 +278,33 @@ namespace MoonsTotalWar.Engine
 			Control spacerRight = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
 			masterBar.AddChild(spacerRight);
 
+			// Layout Editor Toggle Button
+			_btnEditLayoutToggle = new Button
+			{
+				Text = "🏗️ EDIT BASE",
+				CustomMinimumSize = new Vector2(100, 42),
+				MouseFilter = MouseFilterEnum.Stop,
+				TooltipText = "Toggle Base Layout Editor Mode"
+			};
+			_btnEditLayoutToggle.AddThemeFontSizeOverride("font_size", 9);
+			_btnEditLayoutToggle.Pressed += ToggleEditBaseLayout;
+
+			StyleBoxFlat editStyle = new StyleBoxFlat
+			{
+				BgColor = new Color(0.04f, 0.08f, 0.14f, 0.92f),
+				BorderColor = new Color("#00F0FF"),
+				BorderWidthLeft = 1,
+				BorderWidthRight = 1,
+				BorderWidthTop = 1,
+				BorderWidthBottom = 2,
+				CornerRadiusTopLeft = 5,
+				CornerRadiusTopRight = 5,
+				CornerRadiusBottomLeft = 5,
+				CornerRadiusBottomRight = 5
+			};
+			_btnEditLayoutToggle.AddThemeStyleboxOverride("normal", editStyle);
+			masterBar.AddChild(_btnEditLayoutToggle);
+
 			// Rank Badge
 			Button rankBtn = new Button
 			{
@@ -317,6 +345,26 @@ namespace MoonsTotalWar.Engine
 			rankContent.AddChild(rankVal);
 			rankBtn.AddChild(rankContent);
 			masterBar.AddChild(rankBtn);
+		}
+
+		private void ToggleEditBaseLayout()
+		{
+			IsEditModeActive = !IsEditModeActive;
+
+			if (IsEditModeActive)
+			{
+				_btnEditLayoutToggle.Text = "💾 SAVE BASE";
+				_btnEditLayoutToggle.Modulate = new Color("#22C55E");
+			}
+			else
+			{
+				_btnEditLayoutToggle.Text = "🏗️ EDIT BASE";
+				_btnEditLayoutToggle.Modulate = Colors.White;
+				EmitSignal(SignalName.SaveLayoutRequested);
+			}
+
+			EmitSignal(SignalName.EditModeToggled, IsEditModeActive);
+			GD.Print($"[BASE HUD] Layout Edit Mode: {IsEditModeActive}");
 		}
 
 		// =========================================================================

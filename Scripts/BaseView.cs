@@ -5,18 +5,19 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v11.0 Bulletproof)
-	/// - Central Citadel Footprint: 4x4 (16 Tiles) Industrial Core.
+	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v17.0 Audited 48x50 Terrain Grid)
+	/// - Calibrated 48x50 Grid covering the North-East plateau and deep South-West basin.
+	/// - Central Citadel: 4x4 (16 Tiles) Industrial Core.
 	/// - 22 Satellite Facilities: 2x2 Footprint with strictly non-overlapping coordinates.
+	/// - Interactive Clash of Kings Base Layout Editor with Directional Reticle & Collision Validation.
 	/// - Universal Touchpad, Mouse, Touch Panning, and Zooming.
-	/// - Dynamically instances BaseHUD onto top-level CanvasLayer (Layer 100).
 	/// </summary>
 	public partial class BaseView : Node2D
 	{
 		[Export] public Texture2D TerrainTexture;
 
-		public const int GRID_COLS = 36;
-		public const int GRID_ROWS = 36;
+		public const int GRID_COLS = 48; // 48 Columns for wide North-East reach
+		public const int GRID_ROWS = 50; // 50 Rows for deep South / South-West coverage
 
 		public const float TILE_WIDTH_HALF = 40.0f;
 		public const float TILE_HEIGHT_HALF = 22.5f;
@@ -25,7 +26,7 @@ namespace MoonsTotalWar.Engine
 		private Camera2D _camera;
 		private Vector2 _targetCameraPos;
 		private float _targetZoom = 0.85f;
-		private bool _isDragging = false;
+		private bool _isDraggingCamera = false;
 		private Vector2 _dragStartMousePos;
 		private Vector2 _dragStartCameraPos;
 
@@ -33,6 +34,7 @@ namespace MoonsTotalWar.Engine
 		private Sprite2D _terrainSprite;
 		private Node2D _gridLineCanvas;
 		private Node2D _buildingContainer;
+		private Node2D _teleportReticleContainer;
 
 		// Canvas Layers
 		private CanvasLayer _hudLayer;
@@ -40,7 +42,13 @@ namespace MoonsTotalWar.Engine
 		private BaseHUD _hudInstance;
 		private BuildingInspectorModal _inspectorModal;
 
-		public struct BuildingNodeData
+		// Edit Mode States
+		public bool IsEditLayoutMode { get; private set; } = false;
+		public string SelectedBuildingId { get; private set; } = null;
+		public Vector2I StagedGridPos { get; private set; } = Vector2I.Zero;
+		private Vector2I _preMoveGridPos = Vector2I.Zero;
+
+		public class BuildingNodeData
 		{
 			public string Id;
 			public string Name;
@@ -51,6 +59,9 @@ namespace MoonsTotalWar.Engine
 			public Color ThemeColor;
 			public string Icon;
 			public int Level;
+			public Node2D AnchorNode;
+			public Polygon2D DiamondPoly;
+			public Line2D DiamondOutline;
 			public Button ClickButton;
 		}
 
@@ -58,8 +69,8 @@ namespace MoonsTotalWar.Engine
 
 		public override void _Ready()
 		{
-			// Industrial Core Center: Col 14, Row 8 (4x4 footprint center is at 16, 10)
-			Vector2 baseCenter = GridToIso(16, 10);
+			// Center camera across the 48x50 grid terrain
+			Vector2 baseCenter = GridToIso(22, 22);
 
 			// 1. Initialize Camera
 			_camera = GetNodeOrNull<Camera2D>("Camera2D");
@@ -82,19 +93,25 @@ namespace MoonsTotalWar.Engine
 			AddChild(_gridLineCanvas);
 			DrawIsometricGridLines();
 
-			// 4. Build 23 Non-Overlapping Building Diamonds
+			// 4. Build 23 Buildings Container
 			_buildingContainer = new Node2D { Name = "BuildingContainer", ZIndex = 2 };
 			AddChild(_buildingContainer);
 			SpawnAudited23BuildingLayout();
 
-			// 5. Build Layer 100: Top Cockpit HUD + Bottom Nav Dock
+			// 5. Build Teleport Reticle Container
+			_teleportReticleContainer = new Node2D { Name = "TeleportReticleContainer", ZIndex = 5000 };
+			AddChild(_teleportReticleContainer);
+
+			// 6. Build Layer 100: Top Cockpit HUD + Bottom Nav Dock
 			_hudLayer = new CanvasLayer { Name = "HUDLayer", Layer = 100 };
 			AddChild(_hudLayer);
 
 			_hudInstance = new BaseHUD();
+			_hudInstance.EditModeToggled += OnEditModeToggled;
+			_hudInstance.SaveLayoutRequested += OnSaveLayoutRequested;
 			_hudLayer.AddChild(_hudInstance);
 
-			// 6. Build Layer 110: Centered Inspector Modal
+			// 7. Build Layer 110: Centered Inspector Modal
 			_modalLayer = new CanvasLayer { Name = "ModalLayer", Layer = 110 };
 			AddChild(_modalLayer);
 
@@ -102,7 +119,7 @@ namespace MoonsTotalWar.Engine
 			_inspectorModal.BuildingUpgraded += OnBuildingUpgraded;
 			_modalLayer.AddChild(_inspectorModal);
 
-			GD.Print($"[BASE VIEW] Initialization complete. Camera centered at {baseCenter}");
+			GD.Print($"[BASE VIEW] Initialization complete. 48x50 Grid centered at {baseCenter}");
 		}
 
 		public override void _Process(double delta)
@@ -129,7 +146,6 @@ namespace MoonsTotalWar.Engine
 			}
 		}
 
-		// UNIVERSAL INPUT: Touchpad, Mouse Drag, Touch Screen, Wheel Zoom
 		public override void _Input(InputEvent @event)
 		{
 			// Zoom Wheel / Two-Finger Touchpad Scroll
@@ -153,7 +169,7 @@ namespace MoonsTotalWar.Engine
 					{
 						if (mb.Position.Y > 65 && mb.Position.Y < GetViewportRect().Size.Y - 65 && (_inspectorModal == null || !_inspectorModal.Visible))
 						{
-							_isDragging = true;
+							_isDraggingCamera = true;
 							_dragStartMousePos = mb.Position;
 							_dragStartCameraPos = _targetCameraPos;
 						}
@@ -163,12 +179,12 @@ namespace MoonsTotalWar.Engine
 				{
 					if (mb.ButtonIndex == MouseButton.Left || mb.ButtonIndex == MouseButton.Right || mb.ButtonIndex == MouseButton.Middle)
 					{
-						_isDragging = false;
+						_isDraggingCamera = false;
 					}
 				}
 			}
 
-			if (@event is InputEventMouseMotion mm && _isDragging)
+			if (@event is InputEventMouseMotion mm && _isDraggingCamera)
 			{
 				Vector2 delta = (mm.Position - _dragStartMousePos) / _camera.Zoom.X;
 				_targetCameraPos = _dragStartCameraPos - delta;
@@ -211,7 +227,7 @@ namespace MoonsTotalWar.Engine
 				_terrainSprite.Texture = texToUse;
 				_terrainSprite.Position = baseCenter;
 
-				float desiredWidth = 4400.0f;
+				float desiredWidth = 4700.0f;
 				float scaleFactor = desiredWidth / texToUse.GetWidth();
 				_terrainSprite.Scale = new Vector2(scaleFactor, scaleFactor);
 
@@ -223,6 +239,7 @@ namespace MoonsTotalWar.Engine
 		{
 			Color gridColor = new Color(0f, 0.94f, 1f, 0.28f);
 
+			// Draw horizontal row isometric diagonals across all 48 columns
 			for (int r = 0; r <= GRID_ROWS; r++)
 			{
 				Vector2 start = GridToIso(0, r);
@@ -233,6 +250,7 @@ namespace MoonsTotalWar.Engine
 				_gridLineCanvas.AddChild(line);
 			}
 
+			// Draw column isometric diagonals across all 50 rows
 			for (int c = 0; c <= GRID_COLS; c++)
 			{
 				Vector2 start = GridToIso(c, 0);
@@ -249,42 +267,42 @@ namespace MoonsTotalWar.Engine
 			var defs = new[]
 			{
 				// 1. CENTRAL COMMAND: Massive 4x4 Footprint (16 Tiles)
-				new { Id = "hub_cmd", Name = "Industrial Core", Col = 14, Row = 8, W = 4, H = 4, ColorHex = "#ffffff", Icon = "🏢" },
+				new { Id = "hub_cmd", Name = "Industrial Core", Col = 20, Row = 18, W = 4, H = 4, ColorHex = "#ffffff", Icon = "🏢" },
 
 				// 2. CITADEL PERIMETER SATELLITES
-				new { Id = "hub_shd", Name = "Planetary Shield", Col = 15, Row = 4, W = 2, H = 2, ColorHex = "#38bdf8", Icon = "🛡️" },
-				new { Id = "hub_mil", Name = "Orbital Shipyard", Col = 15, Row = 1, W = 2, H = 2, ColorHex = "#ef4444", Icon = "⚔️" },
-				new { Id = "hub_mgd", Name = "Moongold Obelisk", Col = 15, Row = 13, W = 2, H = 2, ColorHex = "#fbbf24", Icon = "💰" },
-				new { Id = "hub_arm", Name = "Garrison Armory", Col = 15, Row = 16, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🎖️" },
+				new { Id = "hub_shd", Name = "Planetary Shield", Col = 21, Row = 14, W = 2, H = 2, ColorHex = "#38bdf8", Icon = "🛡️" },
+				new { Id = "hub_mil", Name = "Orbital Shipyard", Col = 21, Row = 11, W = 2, H = 2, ColorHex = "#ef4444", Icon = "⚔️" },
+				new { Id = "hub_mgd", Name = "Moongold Obelisk", Col = 21, Row = 23, W = 2, H = 2, ColorHex = "#fbbf24", Icon = "💰" },
+				new { Id = "hub_arm", Name = "Garrison Armory", Col = 21, Row = 26, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🎖️" },
 
 				// 3. RESEARCH, FLEET, RADAR & LOGISTICS
-				new { Id = "hub_com", Name = "Commanders Spire", Col = 10, Row = 5, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🤝" },
-				new { Id = "hub_flt", Name = "Fleet Station", Col = 20, Row = 5, W = 2, H = 2, ColorHex = "#3b82f6", Icon = "🛰️" },
-				new { Id = "hub_rng", Name = "The Deep Radar", Col = 7, Row = 2, W = 2, H = 2, ColorHex = "#f59e0b", Icon = "📡" },
-				new { Id = "hub_trd", Name = "Trade Logistics", Col = 23, Row = 2, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "📦" },
-				new { Id = "hub_rsh", Name = "Research Directorate", Col = 4, Row = 5, W = 2, H = 2, ColorHex = "#a855f7", Icon = "🔬" },
+				new { Id = "hub_com", Name = "Commanders Spire", Col = 16, Row = 15, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🤝" },
+				new { Id = "hub_flt", Name = "Fleet Station", Col = 26, Row = 15, W = 2, H = 2, ColorHex = "#3b82f6", Icon = "🛰️" },
+				new { Id = "hub_rng", Name = "The Deep Radar", Col = 13, Row = 12, W = 2, H = 2, ColorHex = "#f59e0b", Icon = "📡" },
+				new { Id = "hub_trd", Name = "Trade Logistics", Col = 29, Row = 12, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "📦" },
+				new { Id = "hub_rsh", Name = "Research Directorate", Col = 10, Row = 15, W = 2, H = 2, ColorHex = "#a855f7", Icon = "🔬" },
 
 				// 4. WEST POWER DISTRICT (3 FUSION COILS)
-				new { Id = "dist_e_0", Name = "Power Station A", Col = 8, Row = 8, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
-				new { Id = "dist_e_1", Name = "Power Station B", Col = 5, Row = 10, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
-				new { Id = "dist_e_2", Name = "Power Station C", Col = 8, Row = 12, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
+				new { Id = "dist_e_0", Name = "Power Station A", Col = 14, Row = 18, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
+				new { Id = "dist_e_1", Name = "Power Station B", Col = 11, Row = 20, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
+				new { Id = "dist_e_2", Name = "Power Station C", Col = 14, Row = 22, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
 
 				// 5. SOUTH-WEST IRON EXTRACTION QUARRY (3 MINES)
-				new { Id = "dist_i_0", Name = "Iron Mine A", Col = 11, Row = 13, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
-				new { Id = "dist_i_1", Name = "Iron Mine B", Col = 8, Row = 15, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
-				new { Id = "dist_i_2", Name = "Iron Mine C", Col = 11, Row = 17, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
+				new { Id = "dist_i_0", Name = "Iron Mine A", Col = 17, Row = 23, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
+				new { Id = "dist_i_1", Name = "Iron Mine B", Col = 14, Row = 25, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
+				new { Id = "dist_i_2", Name = "Iron Mine C", Col = 17, Row = 27, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
 
 				// 6. SOUTH-EAST TITANIUM SMELTER COMPLEX (3 EXTRACTORS - Strict 2-tile buffer)
-				new { Id = "dist_t_0", Name = "Titanium Smelter A", Col = 19, Row = 13, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
-				new { Id = "dist_t_1", Name = "Titanium Smelter B", Col = 22, Row = 16, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
-				new { Id = "dist_t_2", Name = "Titanium Smelter C", Col = 19, Row = 17, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
+				new { Id = "dist_t_0", Name = "Titanium Smelter A", Col = 25, Row = 23, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
+				new { Id = "dist_t_1", Name = "Titanium Smelter B", Col = 28, Row = 26, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
+				new { Id = "dist_t_2", Name = "Titanium Smelter C", Col = 25, Row = 27, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
 
 				// 7. EAST HELIUM-3 FUEL CRYO FIELD (5 GAS DISTILLERIES - Strict 2-tile buffer)
-				new { Id = "dist_h3_0", Name = "H3 Distillery A", Col = 22, Row = 8, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
-				new { Id = "dist_h3_1", Name = "H3 Distillery B", Col = 25, Row = 9, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
-				new { Id = "dist_h3_2", Name = "H3 Distillery C", Col = 22, Row = 11, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
-				new { Id = "dist_h3_3", Name = "H3 Distillery D", Col = 25, Row = 12, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
-				new { Id = "dist_h3_4", Name = "H3 Distillery E", Col = 22, Row = 14, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" }
+				new { Id = "dist_h3_0", Name = "H3 Distillery A", Col = 28, Row = 18, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
+				new { Id = "dist_h3_1", Name = "H3 Distillery B", Col = 31, Row = 19, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
+				new { Id = "dist_h3_2", Name = "H3 Distillery C", Col = 28, Row = 21, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
+				new { Id = "dist_h3_3", Name = "H3 Distillery D", Col = 31, Row = 22, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
+				new { Id = "dist_h3_4", Name = "H3 Distillery E", Col = 28, Row = 24, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" }
 			};
 
 			foreach (var def in defs)
@@ -295,7 +313,6 @@ namespace MoonsTotalWar.Engine
 				Vector2 right = GridToIso(def.Col + def.W, def.Row);
 				Vector2 bottom = GridToIso(def.Col + def.W, def.Row + def.H);
 				Vector2 left = GridToIso(def.Col, def.Row + def.H);
-
 				Vector2 center = (top + bottom) * 0.5f;
 
 				Node2D nodeAnchor = new Node2D
@@ -362,20 +379,7 @@ namespace MoonsTotalWar.Engine
 				clickArea.AddThemeStyleboxOverride("normal", style);
 
 				string bId = def.Id;
-				string bName = def.Name;
-				Color bColor = themeColor;
-
-				clickArea.Pressed += () =>
-				{
-					if (_buildingRegistry.TryGetValue(bId, out BuildingNodeData bData))
-					{
-						_inspectorModal.InspectBuilding(bData.Id, bData.Name, bData.Level, bData.ThemeColor);
-					}
-					else
-					{
-						_inspectorModal.InspectBuilding(bId, bName, 1, bColor);
-					}
-				};
+				clickArea.Pressed += () => OnBuildingClicked(bId);
 
 				nodeAnchor.AddChild(clickArea);
 				_buildingContainer.AddChild(nodeAnchor);
@@ -391,8 +395,26 @@ namespace MoonsTotalWar.Engine
 					ThemeColor = themeColor,
 					Icon = def.Icon,
 					Level = 1,
+					AnchorNode = nodeAnchor,
+					DiamondPoly = poly,
+					DiamondOutline = outline,
 					ClickButton = clickArea
 				};
+			}
+		}
+
+		private void OnBuildingClicked(string buildingId)
+		{
+			if (IsEditLayoutMode)
+			{
+				SelectBuildingForRelocation(buildingId);
+			}
+			else
+			{
+				if (_buildingRegistry.TryGetValue(buildingId, out BuildingNodeData bData))
+				{
+					_inspectorModal.InspectBuilding(bData.Id, bData.Name, bData.Level, bData.ThemeColor);
+				}
 			}
 		}
 
@@ -401,14 +423,222 @@ namespace MoonsTotalWar.Engine
 			if (_buildingRegistry.TryGetValue(buildingId, out BuildingNodeData data))
 			{
 				data.Level = newLevel;
-				_buildingRegistry[buildingId] = data;
-
 				if (data.ClickButton != null)
 				{
 					data.ClickButton.Text = $"{data.Icon} {data.Name}\n[LVL {newLevel}]";
 				}
-
 				GD.Print($"[BASE] Building {data.Name} upgraded to Level {newLevel}!");
+			}
+		}
+
+		// =========================================================================
+		// 8. CLASH OF KINGS BASE LAYOUT RELOCATION & TELEPORT CONTROLLER
+		// =========================================================================
+		private void OnEditModeToggled(bool isEditing)
+		{
+			IsEditLayoutMode = isEditing;
+			if (!IsEditLayoutMode)
+			{
+				ClearTeleportReticle();
+				SelectedBuildingId = null;
+			}
+			GD.Print($"[BASE VIEW] Edit Mode Set: {IsEditLayoutMode}");
+		}
+
+		private void OnSaveLayoutRequested()
+		{
+			ClearTeleportReticle();
+			SelectedBuildingId = null;
+			GD.Print("[BASE VIEW] Layout Saved! Defense Matrix Deployed.");
+		}
+
+		private void SelectBuildingForRelocation(string buildingId)
+		{
+			if (!_buildingRegistry.TryGetValue(buildingId, out BuildingNodeData data)) return;
+
+			SelectedBuildingId = buildingId;
+			StagedGridPos = new Vector2I(data.Col, data.Row);
+			_preMoveGridPos = StagedGridPos;
+
+			RenderTeleportReticle(data);
+		}
+
+		private void NudgeStagedBuilding(int dCol, int dRow)
+		{
+			if (string.IsNullOrEmpty(SelectedBuildingId) || !_buildingRegistry.TryGetValue(SelectedBuildingId, out BuildingNodeData data)) return;
+
+			int nextCol = Math.Clamp(StagedGridPos.X + dCol, 0, GRID_COLS - data.W);
+			int nextRow = Math.Clamp(StagedGridPos.Y + dRow, 0, GRID_ROWS - data.H);
+
+			StagedGridPos = new Vector2I(nextCol, nextRow);
+			UpdateBuildingPositionAndVisuals(data, StagedGridPos);
+			RenderTeleportReticle(data);
+		}
+
+		private void ConfirmRelocation()
+		{
+			if (string.IsNullOrEmpty(SelectedBuildingId) || !_buildingRegistry.TryGetValue(SelectedBuildingId, out BuildingNodeData data)) return;
+
+			if (!ValidateFootprintLegality(SelectedBuildingId, StagedGridPos.X, StagedGridPos.Y, data.W, data.H))
+			{
+				GD.PrintErr("[BASE VIEW] Cannot place building here! Area obstructed or overlapping.");
+				return;
+			}
+
+			data.Col = StagedGridPos.X;
+			data.Row = StagedGridPos.Y;
+			UpdateBuildingPositionAndVisuals(data, StagedGridPos);
+
+			ClearTeleportReticle();
+			SelectedBuildingId = null;
+			GD.Print($"[BASE VIEW] Placement confirmed for {data.Name} at [{data.Col}, {data.Row}]");
+		}
+
+		private void CancelRelocation()
+		{
+			if (string.IsNullOrEmpty(SelectedBuildingId) || !_buildingRegistry.TryGetValue(SelectedBuildingId, out BuildingNodeData data)) return;
+
+			StagedGridPos = _preMoveGridPos;
+			UpdateBuildingPositionAndVisuals(data, _preMoveGridPos);
+
+			ClearTeleportReticle();
+			SelectedBuildingId = null;
+			GD.Print($"[BASE VIEW] Placement cancelled for {data.Name}");
+		}
+
+		private bool ValidateFootprintLegality(string buildingId, int targetCol, int targetRow, int w, int h)
+		{
+			if (!GameMath.IsFootprintInBounds(targetCol, targetRow, w, h)) return false;
+
+			foreach (var kvp in _buildingRegistry)
+			{
+				if (kvp.Key == buildingId) continue;
+				var other = kvp.Value;
+				if (GameMath.DoFootprintsOverlap(targetCol, targetRow, w, h, other.Col, other.Row, other.W, other.H))
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		private void UpdateBuildingPositionAndVisuals(BuildingNodeData data, Vector2I gridPos)
+		{
+			Vector2 top = GridToIso(gridPos.X, gridPos.Y);
+			Vector2 bottom = GridToIso(gridPos.X + data.W, gridPos.Y + data.H);
+			Vector2 center = (top + bottom) * 0.5f;
+
+			data.AnchorNode.Position = center;
+			data.AnchorNode.ZIndex = (int)center.Y;
+
+			bool isValid = ValidateFootprintLegality(data.Id, gridPos.X, gridPos.Y, data.W, data.H);
+			Color statusColor = isValid ? new Color("#22C55E") : new Color("#EF4444");
+
+			if (data.DiamondPoly != null)
+			{
+				data.DiamondPoly.Color = new Color(statusColor.R, statusColor.G, statusColor.B, 0.55f);
+			}
+			if (data.DiamondOutline != null)
+			{
+				data.DiamondOutline.DefaultColor = statusColor;
+			}
+		}
+
+		private void RenderTeleportReticle(BuildingNodeData data)
+		{
+			ClearTeleportReticle();
+
+			Vector2 top = GridToIso(StagedGridPos.X, StagedGridPos.Y);
+			Vector2 bottom = GridToIso(StagedGridPos.X + data.W, StagedGridPos.Y + data.H);
+			Vector2 center = (top + bottom) * 0.5f;
+
+			bool isValid = ValidateFootprintLegality(data.Id, StagedGridPos.X, StagedGridPos.Y, data.W, data.H);
+
+			// NORTH ARROW
+			_teleportReticleContainer.AddChild(CreateNudgeArrow("▲", center + new Vector2(0, -65), () => NudgeStagedBuilding(0, -1)));
+			// SOUTH ARROW
+			_teleportReticleContainer.AddChild(CreateNudgeArrow("▼", center + new Vector2(0, 65), () => NudgeStagedBuilding(0, 1)));
+			// WEST ARROW
+			_teleportReticleContainer.AddChild(CreateNudgeArrow("◀", center + new Vector2(-100, 0), () => NudgeStagedBuilding(-1, 0)));
+			// EAST ARROW
+			_teleportReticleContainer.AddChild(CreateNudgeArrow("▶", center + new Vector2(100, 0), () => NudgeStagedBuilding(1, 0)));
+
+			// CONFIRM BUBBLE (✓)
+			Button confirmBtn = CreateActionBubble("✓", center + new Vector2(90, -45), isValid ? new Color("#22C55E") : new Color("#64748B"), ConfirmRelocation);
+			confirmBtn.Disabled = !isValid;
+			_teleportReticleContainer.AddChild(confirmBtn);
+
+			// CANCEL BUBBLE (✕)
+			_teleportReticleContainer.AddChild(CreateActionBubble("✕", center + new Vector2(-90, -45), new Color("#EF4444"), CancelRelocation));
+		}
+
+		private Button CreateNudgeArrow(string symbol, Vector2 pos, Action onPress)
+		{
+			Button btn = new Button
+			{
+				Text = symbol,
+				CustomMinimumSize = new Vector2(36, 36),
+				Position = pos - new Vector2(18, 18),
+				MouseFilter = Control.MouseFilterEnum.Stop
+			};
+			btn.AddThemeFontSizeOverride("font_size", 14);
+
+			StyleBoxFlat s = new StyleBoxFlat
+			{
+				BgColor = new Color(0.04f, 0.08f, 0.14f, 0.95f),
+				BorderColor = new Color("#00F0FF"),
+				BorderWidthLeft = 2,
+				BorderWidthRight = 2,
+				BorderWidthTop = 2,
+				BorderWidthBottom = 2,
+				CornerRadiusTopLeft = 18,
+				CornerRadiusTopRight = 18,
+				CornerRadiusBottomLeft = 18,
+				CornerRadiusBottomRight = 18
+			};
+			btn.AddThemeStyleboxOverride("normal", s);
+			btn.Pressed += onPress;
+			return btn;
+		}
+
+		private Button CreateActionBubble(string symbol, Vector2 pos, Color bgCol, Action onPress)
+		{
+			Button btn = new Button
+			{
+				Text = symbol,
+				CustomMinimumSize = new Vector2(40, 40),
+				Position = pos - new Vector2(20, 20),
+				MouseFilter = Control.MouseFilterEnum.Stop
+			};
+			btn.AddThemeFontSizeOverride("font_size", 16);
+
+			StyleBoxFlat s = new StyleBoxFlat
+			{
+				BgColor = bgCol,
+				BorderColor = Colors.White,
+				BorderWidthLeft = 2,
+				BorderWidthRight = 2,
+				BorderWidthTop = 2,
+				BorderWidthBottom = 2,
+				CornerRadiusTopLeft = 20,
+				CornerRadiusTopRight = 20,
+				CornerRadiusBottomLeft = 20,
+				CornerRadiusBottomRight = 20
+			};
+			btn.AddThemeStyleboxOverride("normal", s);
+			btn.Pressed += onPress;
+			return btn;
+		}
+
+		private void ClearTeleportReticle()
+		{
+			if (_teleportReticleContainer != null)
+			{
+				foreach (Node child in _teleportReticleContainer.GetChildren())
+				{
+					child.QueueFree();
+				}
 			}
 		}
 	}

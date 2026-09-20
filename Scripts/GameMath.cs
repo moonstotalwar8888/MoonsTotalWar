@@ -6,24 +6,25 @@ namespace MoonsTotalWar.Engine
 	/// <summary>
 	/// MOONS TOTAL WAR: MASTER MATHEMATICAL ENGINE (C# Godot 4 Edition)
 	/// Precision Calibrated 2.5D Isometric Projection, Storage Scaling & Orbital Telemetry.
+	/// Calibrated to 48x50 Grid covering the expanded terrain surface.
 	/// </summary>
 	public static class GameMath
 	{
 		// ============================================================================
-		// 1. ISOMETRIC 2.5D GROUND PROJECTION METRICS (36x36 EXPANDED GRID)
+		// 1. ISOMETRIC 2.5D GROUND PROJECTION METRICS (48x50 EXPANDED TERRAIN GRID)
 		// ============================================================================
-		public const int CanvasWidth = 4000;
-		public const int CanvasHeight = 2200;
+		public const int CanvasWidth = 4600;
+		public const int CanvasHeight = 2800;
 
-		public const int GridCols = 36;
-		public const int GridRows = 36;
-		public const float TileWidth = 110f;  // Diamond X-span
-		public const float TileHeight = 55f;  // Diamond Y-span (2:1 Ratio)
+		public const int GridCols = 48; // Expanded North-East / East coverage
+		public const int GridRows = 50; // Deep South-West / South terrain coverage
+		public const float TileWidth = 80.0f;   // 2 * TILE_WIDTH_HALF (40.0f)
+		public const float TileHeight = 45.0f;  // 2 * TILE_HEIGHT_HALF (22.5f)
 
 		public const float IsoOriginX = CanvasWidth / 2f;
-		public const float IsoOriginY = 60f;
+		public const float IsoOriginY = 100f;
 
-		// Master Galactic Scale (Recalibrated to 1,000 Moons)
+		// Master Galactic Scale (1,000 Moons)
 		public const int TotalMoons = 1000;
 
 		public const double SixMonthsMs = 180.0 * 24.0 * 60.0 * 60.0 * 1000.0;
@@ -34,21 +35,18 @@ namespace MoonsTotalWar.Engine
 		/// </summary>
 		public static Vector2 GridToIsometric(float gridX, float gridY)
 		{
-			float screenX = IsoOriginX + (gridX - gridY) * (TileWidth / 2f);
-			float screenY = IsoOriginY + (gridX + gridY) * (TileHeight / 2f);
+			float screenX = (gridX - gridY) * 40.0f;
+			float screenY = (gridX + gridY) * 22.5f;
 			return new Vector2(screenX, screenY);
 		}
 
 		/// <summary>
-		/// Inverse Projection: Canvas touch coordinates (canvasX, canvasY) to Isometric Grid (col, row).
+		/// Inverse Projection: Screen pixel coordinates to Isometric Grid (col, row).
 		/// </summary>
-		public static Vector2I ScreenToGrid(float canvasX, float canvasY)
+		public static Vector2I ScreenToGrid(float screenX, float screenY)
 		{
-			float dx = canvasX - IsoOriginX;
-			float dy = canvasY - IsoOriginY;
-
-			int col = (int)Math.Floor((dy / (TileHeight / 2f) + dx / (TileWidth / 2f)) / 2f);
-			int row = (int)Math.Floor((dy / (TileHeight / 2f) - dx / (TileWidth / 2f)) / 2f);
+			int col = (int)Math.Floor((screenY / 22.5f + screenX / 40.0f) / 2f);
+			int row = (int)Math.Floor((screenY / 22.5f - screenX / 40.0f) / 2f);
 
 			col = Math.Clamp(col, 0, GridCols - 1);
 			row = Math.Clamp(row, 0, GridRows - 1);
@@ -68,13 +66,6 @@ namespace MoonsTotalWar.Engine
 		// ============================================================================
 		// 2. FOOTPRINT VALIDATION & OVERLAP CHECKER
 		// ============================================================================
-		public struct CellCoord
-		{
-			public int Col;
-			public int Row;
-			public CellCoord(int c, int r) { Col = c; Row = r; }
-		}
-
 		public static bool IsFootprintInBounds(int col, int row, int w, int h)
 		{
 			return col >= 0 && row >= 0 && (col + w) <= GridCols && (row + h) <= GridRows;
@@ -134,7 +125,7 @@ namespace MoonsTotalWar.Engine
 		}
 
 		// ============================================================================
-		// 4. SECTOR ID PARSER & FLEET NAVIGATION
+		// 4. SECTOR ID PARSER & FLEET NAVIGATION (1,000 MOONS TOPOLOGY)
 		// ============================================================================
 		public static (string serverId, int moon, int baseSlot) ParseSectorId(string sectorId)
 		{
