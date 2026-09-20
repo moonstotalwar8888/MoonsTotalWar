@@ -4,25 +4,25 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: CLASH OF KINGS COMMAND COCKPIT HUD (v2.0 Full Stretch Edition)
-	/// Precision Top-Bar Layout:
-	/// [Left: Commander Avatar + Callsign + Colony Transporter]
-	/// [Center: 5 Slim Clickable Resource Capsules]
-	/// [Right: Engineering Dock Monitor, Fleet Operations Radar & Leaderboard Trophy]
+	/// MOONS TOTAL WAR: CLASH OF KINGS COMMAND COCKPIT HUD (v7.0 Absolute Viewport Lock)
+	/// - Top Bar: Commander Profile, Colony Transporter, 5 Resource Capsules, Rank Trophy.
+	/// - Side Docks: Engineering Construction Monitor, Fleet Operations Radar.
+	/// - Bottom Bar: Command Navigation Dock (Base, Moon Slots, Galaxy Map, Alliance, Comms).
+	/// Calculates physical screen pixel offsets via GetViewportRect() so the bottom bar CANNOT float off-screen.
 	/// </summary>
 	public partial class BaseHUD : Control
 	{
-		// Singleton Instance Access
 		public static BaseHUD Instance { get; private set; }
 
-		// Signals for Scene/Menu Controllers
+		// Signals
 		[Signal] public delegate void AvatarClickedEventHandler();
 		[Signal] public delegate void ColonySwitcherClickedEventHandler();
 		[Signal] public delegate void ResourceClickedEventHandler(string resourceType);
 		[Signal] public delegate void LeaderboardClickedEventHandler();
 		[Signal] public delegate void SpeedupClickedEventHandler();
+		[Signal] public delegate void NavTierSelectedEventHandler(string tierName);
 
-		// Live Colony State
+		// Colony Data
 		public string CommanderName = "COMMANDER ALPHA";
 		public string CurrentBaseName = "Alpha Outpost";
 		public int CurrentMoon = 100;
@@ -36,20 +36,19 @@ namespace MoonsTotalWar.Engine
 		public long SiloCap = 50000;
 		public float ServerSpeed = 1.0f;
 
-		// Engineering & Fleet State
+		// Side Docks Data
 		public string ActiveBuildName = "Industrial Core Lvl 2";
-		public double ActiveBuildTimeRemaining = 145.0; // Seconds
+		public double ActiveBuildTimeRemaining = 145.0;
 		public int QueuedBuildCount = 2;
 		public int ActiveFleetCount = 1;
 		public string ActiveFleetTarget = "M-100:B-04";
-		public double ActiveFleetEta = 320.0; // Seconds
+		public double ActiveFleetEta = 320.0;
 
 		// UI Component References
+		private Panel _bottomPanelNode;
 		private Label _lblCmdName;
 		private Button _btnColonySwitch;
 		private Label _lblValE, _lblValI, _lblValT, _lblValH3, _lblValMGold;
-
-		// Engineering & Fleet Dock Labels
 		private Label _lblBuildName, _lblBuildTimer, _lblQueuedCount;
 		private Label _lblFleetStatus, _lblFleetEta;
 
@@ -59,20 +58,25 @@ namespace MoonsTotalWar.Engine
 		{
 			Instance = this;
 
-			// Lock full width & height to the viewport
+			// Force Control root to span viewport
 			SetAnchorsPreset(LayoutPreset.FullRect);
-			MouseFilter = MouseFilterEnum.Ignore; // Crucial: Allows map panning underneath empty spaces
+			MouseFilter = MouseFilterEnum.Ignore;
 
-			BuildClashOfKingsTopBar();
+			// Listen for screen resize events to re-anchor HUD dynamically
+			GetViewport().Connect("size_changed", Callable.From(RecalculateLayoutBounds));
+
+			BuildTopCockpitBar();
 			BuildTacticalSideDocks();
+			BuildBottomCommandNavigationDock();
+
 			UpdateHUDDisplay();
+			RecalculateLayoutBounds();
 		}
 
 		public override void _Process(double delta)
 		{
 			_heartbeatTimer += delta;
 
-			// Tick active build timers smoothly
 			if (ActiveBuildTimeRemaining > 0)
 			{
 				ActiveBuildTimeRemaining = Math.Max(0, ActiveBuildTimeRemaining - delta);
@@ -92,9 +96,23 @@ namespace MoonsTotalWar.Engine
 			UpdateTimersDisplay();
 		}
 
+		private void RecalculateLayoutBounds()
+		{
+			Vector2 vpSize = GetViewportRect().Size;
+			
+			// Force root control size to match monitor viewport
+			Size = vpSize;
+
+			// Reposition bottom panel to physical screen bottom
+			if (_bottomPanelNode != null)
+			{
+				_bottomPanelNode.Position = new Vector2(0, vpSize.Y - 60);
+				_bottomPanelNode.Size = new Vector2(vpSize.X, 60);
+			}
+		}
+
 		private void TickResourceHeartbeat()
 		{
-			// Production outputs calibrated to server velocity
 			double pE = (3 * 210 * ServerSpeed) / 3600.0;
 			double pI = (3 * 210 * ServerSpeed) / 3600.0;
 			double pT = (3 * 210 * ServerSpeed) / 3600.0;
@@ -130,14 +148,14 @@ namespace MoonsTotalWar.Engine
 			if (_lblFleetEta != null) _lblFleetEta.Text = ActiveFleetEta > 0 ? $"ETA: {FormatTime(ActiveFleetEta)}" : "DOCKED";
 		}
 
-		private void BuildClashOfKingsTopBar()
+		// =========================================================================
+		// 1. TOP COCKPIT BAR (Screen Top)
+		// =========================================================================
+		private void BuildTopCockpitBar()
 		{
-			// Full Screen-Width Dark Glass Top Panel
 			Panel topPanel = new Panel();
 			topPanel.SetAnchorsPreset(LayoutPreset.TopWide);
 			topPanel.CustomMinimumSize = new Vector2(0, 56);
-			topPanel.OffsetLeft = 0;
-			topPanel.OffsetRight = 0;
 			topPanel.OffsetTop = 0;
 			topPanel.OffsetBottom = 56;
 			topPanel.MouseFilter = MouseFilterEnum.Ignore;
@@ -151,7 +169,6 @@ namespace MoonsTotalWar.Engine
 			topPanel.AddThemeStyleboxOverride("panel", topPanelStyle);
 			AddChild(topPanel);
 
-			// Master Horizontal Cockpit Container (Stretches edge-to-edge)
 			HBoxContainer masterBar = new HBoxContainer();
 			masterBar.SetAnchorsPreset(LayoutPreset.FullRect);
 			masterBar.OffsetLeft = 10;
@@ -163,19 +180,18 @@ namespace MoonsTotalWar.Engine
 			masterBar.AddThemeConstantOverride("separation", 8);
 			topPanel.AddChild(masterBar);
 
-			// =========================================================================
-			// 1. TOP-LEFT: COMMANDER PROFILE (NO LEVEL BADGE) & COLONY QUICK-SWITCH
-			// =========================================================================
+			// Profile Section
 			HBoxContainer profileSection = new HBoxContainer();
 			profileSection.MouseFilter = MouseFilterEnum.Ignore;
 			profileSection.AddThemeConstantOverride("separation", 8);
 
-			// Avatar Container (Button without Level Badge)
-			Button avatarBtn = new Button();
-			avatarBtn.CustomMinimumSize = new Vector2(44, 44);
-			avatarBtn.MouseFilter = MouseFilterEnum.Stop;
-			avatarBtn.TooltipText = "Open Commander Dossier & Operations Settings";
-			avatarBtn.Connect("pressed", Callable.From(() => EmitSignal(SignalName.AvatarClicked)));
+			Button avatarBtn = new Button
+			{
+				CustomMinimumSize = new Vector2(44, 44),
+				MouseFilter = MouseFilterEnum.Stop,
+				TooltipText = "Commander Profile Dossier"
+			};
+			avatarBtn.Pressed += () => EmitSignal(SignalName.AvatarClicked);
 
 			StyleBoxFlat avatarStyle = new StyleBoxFlat
 			{
@@ -191,10 +207,7 @@ namespace MoonsTotalWar.Engine
 				CornerRadiusBottomRight = 22
 			};
 			avatarBtn.AddThemeStyleboxOverride("normal", avatarStyle);
-			avatarBtn.AddThemeStyleboxOverride("hover", avatarStyle);
-			avatarBtn.AddThemeStyleboxOverride("pressed", avatarStyle);
 
-			// Avatar Icon Label
 			Label avatarIco = new Label
 			{
 				Text = "👨‍🚀",
@@ -204,20 +217,14 @@ namespace MoonsTotalWar.Engine
 			avatarIco.SetAnchorsPreset(LayoutPreset.FullRect);
 			avatarIco.AddThemeFontSizeOverride("font_size", 20);
 			avatarBtn.AddChild(avatarIco);
-
 			profileSection.AddChild(avatarBtn);
 
-			// Identity Stack: Commander Name + Colony Transporter Dropdown Button
 			VBoxContainer identityStack = new VBoxContainer();
 			identityStack.Alignment = BoxContainer.AlignmentMode.Center;
 			identityStack.MouseFilter = MouseFilterEnum.Ignore;
 			identityStack.AddThemeConstantOverride("separation", 1);
 
-			_lblCmdName = new Label
-			{
-				Text = CommanderName,
-				Modulate = Colors.White
-			};
+			_lblCmdName = new Label { Text = CommanderName, Modulate = Colors.White };
 			_lblCmdName.AddThemeFontSizeOverride("font_size", 11);
 			identityStack.AddChild(_lblCmdName);
 
@@ -229,7 +236,7 @@ namespace MoonsTotalWar.Engine
 			};
 			_btnColonySwitch.AddThemeFontSizeOverride("font_size", 8);
 			_btnColonySwitch.Modulate = new Color("#22C55E");
-			_btnColonySwitch.Connect("pressed", Callable.From(() => EmitSignal(SignalName.ColonySwitcherClicked)));
+			_btnColonySwitch.Pressed += () => EmitSignal(SignalName.ColonySwitcherClicked);
 
 			StyleBoxFlat switchStyle = new StyleBoxFlat
 			{
@@ -250,13 +257,10 @@ namespace MoonsTotalWar.Engine
 			profileSection.AddChild(identityStack);
 			masterBar.AddChild(profileSection);
 
-			// Flexible Spacer
 			Control spacerLeft = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
 			masterBar.AddChild(spacerLeft);
 
-			// =========================================================================
-			// 2. TOP-CENTER: SLIM STRETCHED RESOURCE CAPSULES ARRAY
-			// =========================================================================
+			// Resource Capsules
 			HBoxContainer resourceArray = new HBoxContainer();
 			resourceArray.MouseFilter = MouseFilterEnum.Ignore;
 			resourceArray.AddThemeConstantOverride("separation", 6);
@@ -270,18 +274,17 @@ namespace MoonsTotalWar.Engine
 
 			masterBar.AddChild(resourceArray);
 
-			// Flexible Spacer
 			Control spacerRight = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore };
 			masterBar.AddChild(spacerRight);
 
-			// =========================================================================
-			// 3. TOP-RIGHT: SHINY METALLIC LEADERBOARD TROPHY NODE
-			// =========================================================================
-			Button rankBtn = new Button();
-			rankBtn.CustomMinimumSize = new Vector2(72, 42);
-			rankBtn.MouseFilter = MouseFilterEnum.Stop;
-			rankBtn.TooltipText = "View Galactic Competitions, Alliance Ratings & War Leaderboards";
-			rankBtn.Connect("pressed", Callable.From(() => EmitSignal(SignalName.LeaderboardClicked)));
+			// Rank Badge
+			Button rankBtn = new Button
+			{
+				CustomMinimumSize = new Vector2(72, 42),
+				MouseFilter = MouseFilterEnum.Stop,
+				TooltipText = "Galactic Leaderboard"
+			};
+			rankBtn.Pressed += () => EmitSignal(SignalName.LeaderboardClicked);
 
 			StyleBoxFlat rankStyle = new StyleBoxFlat
 			{
@@ -304,34 +307,24 @@ namespace MoonsTotalWar.Engine
 			rankContent.MouseFilter = MouseFilterEnum.Ignore;
 			rankContent.AddThemeConstantOverride("separation", -2);
 
-			Label rankIco = new Label
-			{
-				Text = "🏆 RANK",
-				HorizontalAlignment = HorizontalAlignment.Center,
-				Modulate = new Color("#FBBF24")
-			};
+			Label rankIco = new Label { Text = "🏆 RANK", HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Color("#FBBF24") };
 			rankIco.AddThemeFontSizeOverride("font_size", 8);
 
-			Label rankVal = new Label
-			{
-				Text = "#1 PRIME",
-				HorizontalAlignment = HorizontalAlignment.Center,
-				Modulate = Colors.White
-			};
+			Label rankVal = new Label { Text = "#1 PRIME", HorizontalAlignment = HorizontalAlignment.Center, Modulate = Colors.White };
 			rankVal.AddThemeFontSizeOverride("font_size", 9);
 
 			rankContent.AddChild(rankIco);
 			rankContent.AddChild(rankVal);
 			rankBtn.AddChild(rankContent);
-
 			masterBar.AddChild(rankBtn);
 		}
 
+		// =========================================================================
+		// 2. TACTICAL SIDE DOCKS
+		// =========================================================================
 		private void BuildTacticalSideDocks()
 		{
-			// =========================================================================
-			// ENGINEERING CONSTRUCTION DOCK MONITOR (Top-Right under bar)
-			// =========================================================================
+			// Build Dock (Top-Right)
 			Panel buildDock = new Panel();
 			buildDock.SetAnchorsPreset(LayoutPreset.TopRight);
 			buildDock.CustomMinimumSize = new Vector2(180, 52);
@@ -370,39 +363,30 @@ namespace MoonsTotalWar.Engine
 			dockTitle.AddThemeFontSizeOverride("font_size", 8);
 			buildBox.AddChild(dockTitle);
 
-			HBoxContainer activeRow = new HBoxContainer();
-			activeRow.MouseFilter = MouseFilterEnum.Ignore;
-
+			HBoxContainer activeRow = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
 			_lblBuildName = new Label { Text = ActiveBuildName, Modulate = Colors.White, SizeFlagsHorizontal = SizeFlags.ExpandFill };
 			_lblBuildName.AddThemeFontSizeOverride("font_size", 9);
-
 			_lblBuildTimer = new Label { Text = FormatTime(ActiveBuildTimeRemaining), Modulate = new Color("#22C55E") };
 			_lblBuildTimer.AddThemeFontSizeOverride("font_size", 9);
-
 			activeRow.AddChild(_lblBuildName);
 			activeRow.AddChild(_lblBuildTimer);
 			buildBox.AddChild(activeRow);
 
-			HBoxContainer subRow = new HBoxContainer();
-			subRow.MouseFilter = MouseFilterEnum.Ignore;
-
+			HBoxContainer subRow = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
 			_lblQueuedCount = new Label { Text = $"+{QueuedBuildCount} QUEUED", Modulate = new Color("#94A3B8"), SizeFlagsHorizontal = SizeFlags.ExpandFill };
 			_lblQueuedCount.AddThemeFontSizeOverride("font_size", 8);
 
 			Button speedupBtn = new Button { Text = "⚡ SPEEDUP", CustomMinimumSize = new Vector2(50, 14), MouseFilter = MouseFilterEnum.Stop };
 			speedupBtn.AddThemeFontSizeOverride("font_size", 7);
 			speedupBtn.Modulate = new Color("#FBBF24");
-			speedupBtn.Connect("pressed", Callable.From(() => EmitSignal(SignalName.SpeedupClicked)));
+			speedupBtn.Pressed += () => EmitSignal(SignalName.SpeedupClicked);
 
 			subRow.AddChild(_lblQueuedCount);
 			subRow.AddChild(speedupBtn);
 			buildBox.AddChild(subRow);
-
 			buildDock.AddChild(buildBox);
 
-			// =========================================================================
-			// FLEET OPERATIONS RADAR MONITOR (Top-Left under bar)
-			// =========================================================================
+			// Fleet Dock (Top-Left)
 			Panel fleetDock = new Panel();
 			fleetDock.SetAnchorsPreset(LayoutPreset.TopLeft);
 			fleetDock.CustomMinimumSize = new Vector2(210, 36);
@@ -448,13 +432,118 @@ namespace MoonsTotalWar.Engine
 			fleetDock.AddChild(fleetBox);
 		}
 
+		// =========================================================================
+		// 3. BOTTOM COMMAND NAVIGATION DOCK (Absolute Viewport Anchor)
+		// =========================================================================
+		private void BuildBottomCommandNavigationDock()
+		{
+			Vector2 vpSize = GetViewportRect().Size;
+
+			_bottomPanelNode = new Panel();
+			_bottomPanelNode.Name = "BottomNavigationDockPanel";
+			_bottomPanelNode.Position = new Vector2(0, vpSize.Y - 60);
+			_bottomPanelNode.Size = new Vector2(vpSize.X, 60);
+			_bottomPanelNode.CustomMinimumSize = new Vector2(0, 60);
+			_bottomPanelNode.MouseFilter = MouseFilterEnum.Ignore;
+
+			StyleBoxFlat bStyle = new StyleBoxFlat
+			{
+				BgColor = new Color(0.03f, 0.05f, 0.08f, 0.96f),
+				BorderColor = new Color(0f, 0.94f, 1f, 0.5f),
+				BorderWidthTop = 2
+			};
+			_bottomPanelNode.AddThemeStyleboxOverride("panel", bStyle);
+			AddChild(_bottomPanelNode);
+
+			HBoxContainer navRow = new HBoxContainer();
+			navRow.SetAnchorsPreset(LayoutPreset.FullRect);
+			navRow.OffsetLeft = 20;
+			navRow.OffsetRight = -20;
+			navRow.OffsetTop = 6;
+			navRow.OffsetBottom = -6;
+			navRow.MouseFilter = MouseFilterEnum.Ignore;
+			navRow.Alignment = BoxContainer.AlignmentMode.Center;
+			navRow.AddThemeConstantOverride("separation", 14);
+			_bottomPanelNode.AddChild(navRow);
+
+			navRow.AddChild(CreateNavTab("🌕", "BASE", "BASE"));
+			navRow.AddChild(CreateNavTab("🪐", "MOON SLOTS", "MOON"));
+			navRow.AddChild(CreateNavTab("🌌", "GALAXY MAP", "GALAXY"));
+			navRow.AddChild(CreateNavTab("🛡️", "ALLIANCE", "ALLIANCE"));
+			navRow.AddChild(CreateNavTab("✉️", "COMMS", "COMMS"));
+		}
+
+		private Button CreateNavTab(string icon, string title, string targetTier)
+		{
+			Button tabBtn = new Button
+			{
+				CustomMinimumSize = new Vector2(115, 46),
+				MouseFilter = MouseFilterEnum.Stop
+			};
+
+			StyleBoxFlat tabStyle = new StyleBoxFlat
+			{
+				BgColor = new Color(0.06f, 0.09f, 0.14f, 0.92f),
+				BorderColor = new Color(0f, 0.94f, 1f, 0.6f),
+				BorderWidthLeft = 1,
+				BorderWidthRight = 1,
+				BorderWidthTop = 1,
+				BorderWidthBottom = 1,
+				CornerRadiusTopLeft = 6,
+				CornerRadiusTopRight = 6,
+				CornerRadiusBottomLeft = 6,
+				CornerRadiusBottomRight = 6
+			};
+			tabBtn.AddThemeStyleboxOverride("normal", tabStyle);
+
+			VBoxContainer stack = new VBoxContainer();
+			stack.SetAnchorsPreset(LayoutPreset.FullRect);
+			stack.Alignment = BoxContainer.AlignmentMode.Center;
+			stack.MouseFilter = MouseFilterEnum.Ignore;
+			stack.AddThemeConstantOverride("separation", -1);
+
+			Label ico = new Label { Text = icon, HorizontalAlignment = HorizontalAlignment.Center };
+			ico.AddThemeFontSizeOverride("font_size", 14);
+
+			Label lbl = new Label { Text = title, HorizontalAlignment = HorizontalAlignment.Center, Modulate = new Color("#00F0FF") };
+			lbl.AddThemeFontSizeOverride("font_size", 9);
+
+			stack.AddChild(ico);
+			stack.AddChild(lbl);
+			tabBtn.AddChild(stack);
+
+			tabBtn.Pressed += () => OnNavTabPressed(targetTier);
+			return tabBtn;
+		}
+
+		private void OnNavTabPressed(string targetTier)
+		{
+			GD.Print($"[BASE HUD] Navigation Tab Clicked: {targetTier}");
+			EmitSignal(SignalName.NavTierSelected, targetTier);
+
+			if (targetTier == "BASE")
+			{
+				GetTree().ChangeSceneToFile("res://Scenes/base_view.tscn");
+			}
+			else if (targetTier == "MOON")
+			{
+				GetTree().ChangeSceneToFile("res://Scenes/MoonView.tscn");
+			}
+			else if (targetTier == "GALAXY")
+			{
+				GetTree().ChangeSceneToFile("res://Scenes/GalaxyView.tscn");
+			}
+		}
+
 		private Button CreateResourceCapsule(string icon, string resCode, Color color, out Label valLabel)
 		{
-			Button capsuleBtn = new Button();
-			capsuleBtn.CustomMinimumSize = new Vector2(92, 30);
-			capsuleBtn.MouseFilter = MouseFilterEnum.Stop;
-			capsuleBtn.TooltipText = $"Click to inspect {resCode} extraction outputs and storage capacity";
-			capsuleBtn.Connect("pressed", Callable.From(() => EmitSignal(SignalName.ResourceClicked, resCode)));
+			Button capsuleBtn = new Button
+			{
+				CustomMinimumSize = new Vector2(92, 30),
+				MouseFilter = MouseFilterEnum.Stop,
+				TooltipText = $"{resCode} Resources"
+			};
+			capsuleBtn.Pressed += () => EmitSignal(SignalName.ResourceClicked, resCode);
 
 			StyleBoxFlat capStyle = new StyleBoxFlat
 			{
@@ -480,27 +569,24 @@ namespace MoonsTotalWar.Engine
 			Label ico = new Label { Text = icon };
 			ico.AddThemeFontSizeOverride("font_size", 10);
 
-			valLabel = new Label
-			{
-				Text = "50,000",
-				Modulate = Colors.White
-			};
+			valLabel = new Label { Text = "50,000", Modulate = Colors.White };
 			valLabel.AddThemeFontSizeOverride("font_size", 9);
 
 			row.AddChild(ico);
 			row.AddChild(valLabel);
 			capsuleBtn.AddChild(row);
-
 			return capsuleBtn;
 		}
 
 		private Button CreateMGoldCapsule(string icon, out Label valLabel)
 		{
-			Button capsuleBtn = new Button();
-			capsuleBtn.CustomMinimumSize = new Vector2(88, 30);
-			capsuleBtn.MouseFilter = MouseFilterEnum.Stop;
-			capsuleBtn.TooltipText = "Moongold Treasury Exchange - Click to acquire credits";
-			capsuleBtn.Connect("pressed", Callable.From(() => EmitSignal(SignalName.ResourceClicked, "MGD")));
+			Button capsuleBtn = new Button
+			{
+				CustomMinimumSize = new Vector2(88, 30),
+				MouseFilter = MouseFilterEnum.Stop,
+				TooltipText = "Moongold Treasury"
+			};
+			capsuleBtn.Pressed += () => EmitSignal(SignalName.ResourceClicked, "MGD");
 
 			StyleBoxFlat goldStyle = new StyleBoxFlat
 			{
@@ -526,25 +612,16 @@ namespace MoonsTotalWar.Engine
 			Label ico = new Label { Text = icon };
 			ico.AddThemeFontSizeOverride("font_size", 10);
 
-			valLabel = new Label
-			{
-				Text = "100",
-				Modulate = new Color("#FBBF24")
-			};
+			valLabel = new Label { Text = "100", Modulate = new Color("#FBBF24") };
 			valLabel.AddThemeFontSizeOverride("font_size", 9);
 
-			Label plusIco = new Label
-			{
-				Text = "+",
-				Modulate = new Color("#22C55E")
-			};
+			Label plusIco = new Label { Text = "+", Modulate = new Color("#22C55E") };
 			plusIco.AddThemeFontSizeOverride("font_size", 10);
 
 			row.AddChild(ico);
 			row.AddChild(valLabel);
 			row.AddChild(plusIco);
 			capsuleBtn.AddChild(row);
-
 			return capsuleBtn;
 		}
 

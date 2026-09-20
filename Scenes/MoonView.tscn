@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://dwfnxd5el10s8"]
+
+[ext_resource type="Script" uid="uid://ce6w6ds4epbch" path="res://Scripts/MoonView.cs" id="1_8tias"]
+
+[node name="MoonView" type="Node2D" unique_id=124976466]
+script = ExtResource("1_8tias")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1588693901]

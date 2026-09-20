@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://fvfl56au8ni7"]
+
+[ext_resource type="Script" uid="uid://boi2cyr853531" path="res://Scripts/GalaxyView.cs" id="1_y2iom"]
+
+[node name="GalaxyView" type="Node2D" unique_id=244653208]
+script = ExtResource("1_y2iom")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=642628404]

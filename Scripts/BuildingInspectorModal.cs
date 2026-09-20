@@ -5,9 +5,9 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: TACTICAL FACILITY INSPECTOR MODAL (v6.0 Absolute Center Calibration)
+	/// MOONS TOTAL WAR: MASTER TACTICAL FACILITY INSPECTOR MODAL (v7.0 Screen-Centered)
 	/// - Dynamically centers on physical screen viewport on open.
-	/// - Displays 4-resource costs, yield outputs, and instant speedup.
+	/// - Specialized menus for Shipyards, Refineries, Radars (1,000 moons), and Obelisks.
 	/// </summary>
 	public partial class BuildingInspectorModal : Control
 	{
@@ -46,7 +46,6 @@ namespace MoonsTotalWar.Engine
 				child.QueueFree();
 			}
 
-			// Dark Dim Backdrop
 			_dimBackdrop = new ColorRect
 			{
 				Name = "DimBackdrop",
@@ -56,7 +55,6 @@ namespace MoonsTotalWar.Engine
 			_dimBackdrop.SetAnchorsPreset(LayoutPreset.FullRect);
 			AddChild(_dimBackdrop);
 
-			// Center Modal Chassis Panel (520px x 540px)
 			_modalChassis = new Panel
 			{
 				Name = "ModalChassis",
@@ -91,7 +89,6 @@ namespace MoonsTotalWar.Engine
 			mainLayout.AddThemeConstantOverride("separation", 10);
 			_modalChassis.AddChild(mainLayout);
 
-			// Header Row
 			HBoxContainer headerRow = new HBoxContainer();
 			headerRow.Alignment = BoxContainer.AlignmentMode.Center;
 
@@ -126,7 +123,6 @@ namespace MoonsTotalWar.Engine
 
 			mainLayout.AddChild(new HSeparator());
 
-			// Scrollable Content
 			_scrollContainer = new ScrollContainer
 			{
 				SizeFlagsVertical = SizeFlags.ExpandFill,
@@ -154,7 +150,6 @@ namespace MoonsTotalWar.Engine
 				_lblLevelBadge.Modulate = themeColor;
 			}
 
-			// Force Center Positioning mathematically relative to Viewport
 			Vector2 vpSize = GetViewportRect().Size;
 			if (_modalChassis != null)
 			{
@@ -305,7 +300,8 @@ namespace MoonsTotalWar.Engine
 
 		private void BuildDeepRadarMenu()
 		{
-			int maxRange = ActiveBuildingLevel * 500;
+			// Calibrated to 1,000 moons maximum
+			int maxRange = Math.Min(GameMath.TotalMoons, ActiveBuildingLevel * 100);
 
 			Panel radarBox = CreateCardPanel(100);
 			VBoxContainer radarContent = CreateCardContainer(radarBox);
@@ -315,7 +311,7 @@ namespace MoonsTotalWar.Engine
 
 			Label lblDesc = new Label
 			{
-				Text = $"Radar Level: {ActiveBuildingLevel} | Scan Horizon: {maxRange:N0} Moons across Deep Space",
+				Text = $"Radar Level: {ActiveBuildingLevel} | Scan Horizon: {maxRange:N0} Moons across Galactic Orbit",
 				Modulate = Colors.White
 			};
 			lblDesc.AddThemeFontSizeOverride("font_size", 10);
@@ -323,7 +319,7 @@ namespace MoonsTotalWar.Engine
 			HBoxContainer jumpRow = new HBoxContainer();
 			_radarJumpInput = new LineEdit
 			{
-				PlaceholderText = "Moon # [1-5000]",
+				PlaceholderText = $"Moon # [1-{GameMath.TotalMoons}]",
 				CustomMinimumSize = new Vector2(160, 32),
 				SizeFlagsHorizontal = SizeFlags.ExpandFill
 			};
@@ -338,7 +334,7 @@ namespace MoonsTotalWar.Engine
 			btnWarpScan.Modulate = new Color("#F59E0B");
 			btnWarpScan.Pressed += () =>
 			{
-				if (int.TryParse(_radarJumpInput.Text, out int moon) && moon >= 1 && moon <= 5000)
+				if (int.TryParse(_radarJumpInput.Text, out int moon) && moon >= 1 && moon <= GameMath.TotalMoons)
 				{
 					GD.Print($"[RADAR] Warping camera scan to Moon #{moon}");
 					CloseInspector();

@@ -23,6 +23,9 @@ namespace MoonsTotalWar.Engine
 		public const float IsoOriginX = CanvasWidth / 2f;
 		public const float IsoOriginY = 60f;
 
+		// Master Galactic Scale (Recalibrated to 1,000 Moons)
+		public const int TotalMoons = 1000;
+
 		public const double SixMonthsMs = 180.0 * 24.0 * 60.0 * 60.0 * 1000.0;
 		public const double ThreeWeeksMs = 21.0 * 24.0 * 60.0 * 60.0 * 1000.0;
 
@@ -63,7 +66,28 @@ namespace MoonsTotalWar.Engine
 		}
 
 		// ============================================================================
-		// 2. ECONOMY & UPGRADE MATHEMATICAL FORMULAS
+		// 2. FOOTPRINT VALIDATION & OVERLAP CHECKER
+		// ============================================================================
+		public struct CellCoord
+		{
+			public int Col;
+			public int Row;
+			public CellCoord(int c, int r) { Col = c; Row = r; }
+		}
+
+		public static bool IsFootprintInBounds(int col, int row, int w, int h)
+		{
+			return col >= 0 && row >= 0 && (col + w) <= GridCols && (row + h) <= GridRows;
+		}
+
+		public static bool DoFootprintsOverlap(int colA, int rowA, int wA, int hA, int colB, int rowB, int wB, int hB)
+		{
+			return colA < (colB + wB) && (colA + wA) > colB &&
+				   rowA < (rowB + hB) && (rowA + hA) > rowB;
+		}
+
+		// ============================================================================
+		// 3. ECONOMY & UPGRADE MATHEMATICAL FORMULAS
 		// ============================================================================
 		public static long CalcStorageCap(int lvl)
 		{
@@ -110,7 +134,7 @@ namespace MoonsTotalWar.Engine
 		}
 
 		// ============================================================================
-		// 3. SECTOR ID PARSER & FLEET NAVIGATION
+		// 4. SECTOR ID PARSER & FLEET NAVIGATION
 		// ============================================================================
 		public static (string serverId, int moon, int baseSlot) ParseSectorId(string sectorId)
 		{
@@ -131,7 +155,7 @@ namespace MoonsTotalWar.Engine
 			var t = ParseSectorId(targetId);
 
 			int mDiff = Math.Abs(o.moon - t.moon);
-			int moonDist = Math.Min(mDiff, 5000 - mDiff);
+			int moonDist = Math.Min(mDiff, TotalMoons - mDiff);
 			int baseDist = Math.Abs(o.baseSlot - t.baseSlot);
 
 			int totalDist = moonDist * 500 + baseDist * 50;
@@ -150,7 +174,7 @@ namespace MoonsTotalWar.Engine
 		}
 
 		// ============================================================================
-		// 4. TIME FORMATTER & ORBITAL BOSS TELEMETRY
+		// 5. TIME FORMATTER & ORBITAL BOSS TELEMETRY
 		// ============================================================================
 		public static string FormatTime(double seconds)
 		{

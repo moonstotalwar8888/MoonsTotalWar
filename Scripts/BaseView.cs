@@ -5,18 +5,18 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v9.0 Production Calibration)
-	/// - Industrial Core: 4x4 (16 Tiles) Central Citadel Footprint.
+	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v11.0 Bulletproof)
+	/// - Central Citadel Footprint: 4x4 (16 Tiles) Industrial Core.
 	/// - 22 Satellite Facilities: 2x2 Footprint with strictly non-overlapping coordinates.
-	/// - Universal Laptop Touchpad, Mouse, and Touch panning/zooming.
-	/// - Screen-space centered inspector modal.
+	/// - Universal Touchpad, Mouse, Touch Panning, and Zooming.
+	/// - Dynamically instances BaseHUD onto top-level CanvasLayer (Layer 100).
 	/// </summary>
 	public partial class BaseView : Node2D
 	{
 		[Export] public Texture2D TerrainTexture;
 
-		public const int GRID_COLS = 32;
-		public const int GRID_ROWS = 20;
+		public const int GRID_COLS = 36;
+		public const int GRID_ROWS = 36;
 
 		public const float TILE_WIDTH_HALF = 40.0f;
 		public const float TILE_HEIGHT_HALF = 22.5f;
@@ -29,12 +29,12 @@ namespace MoonsTotalWar.Engine
 		private Vector2 _dragStartMousePos;
 		private Vector2 _dragStartCameraPos;
 
-		// Node Hierarchies
+		// Nodes
 		private Sprite2D _terrainSprite;
 		private Node2D _gridLineCanvas;
 		private Node2D _buildingContainer;
 
-		// Dedicated Top-Level Screen Space CanvasLayers
+		// Canvas Layers
 		private CanvasLayer _hudLayer;
 		private CanvasLayer _modalLayer;
 		private BaseHUD _hudInstance;
@@ -58,14 +58,14 @@ namespace MoonsTotalWar.Engine
 
 		public override void _Ready()
 		{
-			// Industrial Core Center: Col 16, Row 10 (Centered on 4x4 Citadel)
+			// Industrial Core Center: Col 14, Row 8 (4x4 footprint center is at 16, 10)
 			Vector2 baseCenter = GridToIso(16, 10);
 
 			// 1. Initialize Camera
 			_camera = GetNodeOrNull<Camera2D>("Camera2D");
 			if (_camera == null)
 			{
-				_camera = new Camera2D();
+				_camera = new Camera2D { Name = "Camera2D" };
 				AddChild(_camera);
 			}
 
@@ -74,7 +74,7 @@ namespace MoonsTotalWar.Engine
 			_camera.Zoom = new Vector2(_targetZoom, _targetZoom);
 			_camera.MakeCurrent();
 
-			// 2. Build World Terrain Backdrop
+			// 2. Build Terrain Backdrop
 			BuildTerrainBackdrop(baseCenter);
 
 			// 3. Build Isometric Grid Lines
@@ -82,19 +82,19 @@ namespace MoonsTotalWar.Engine
 			AddChild(_gridLineCanvas);
 			DrawIsometricGridLines();
 
-			// 4. Build 23 Non-Overlapping Building Diamonds (Industrial Core is 4x4)
+			// 4. Build 23 Non-Overlapping Building Diamonds
 			_buildingContainer = new Node2D { Name = "BuildingContainer", ZIndex = 2 };
 			AddChild(_buildingContainer);
 			SpawnAudited23BuildingLayout();
 
-			// 5. Build Layer 100: Top Cockpit HUD
+			// 5. Build Layer 100: Top Cockpit HUD + Bottom Nav Dock
 			_hudLayer = new CanvasLayer { Name = "HUDLayer", Layer = 100 };
 			AddChild(_hudLayer);
 
 			_hudInstance = new BaseHUD();
 			_hudLayer.AddChild(_hudInstance);
 
-			// 6. Build Layer 110: Centered Screen Modal
+			// 6. Build Layer 110: Centered Inspector Modal
 			_modalLayer = new CanvasLayer { Name = "ModalLayer", Layer = 110 };
 			AddChild(_modalLayer);
 
@@ -102,7 +102,7 @@ namespace MoonsTotalWar.Engine
 			_inspectorModal.BuildingUpgraded += OnBuildingUpgraded;
 			_modalLayer.AddChild(_inspectorModal);
 
-			GD.Print($"[BASE VIEW] Calibration complete. Camera anchored to 4x4 Industrial Core: {baseCenter}");
+			GD.Print($"[BASE VIEW] Initialization complete. Camera centered at {baseCenter}");
 		}
 
 		public override void _Process(double delta)
@@ -115,7 +115,7 @@ namespace MoonsTotalWar.Engine
 				_camera.Zoom = _camera.Zoom.Lerp(new Vector2(_targetZoom, _targetZoom), dt * 14.0f);
 			}
 
-			// Smooth Keyboard WASD / Arrow Keys Pan
+			// Keyboard WASD Navigation
 			Vector2 panDir = Vector2.Zero;
 			if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up)) panDir.Y -= 1.0f;
 			if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down)) panDir.Y += 1.0f;
@@ -129,10 +129,10 @@ namespace MoonsTotalWar.Engine
 			}
 		}
 
-		// UNIVERSAL INPUT: Laptop Touchpad, Mouse, and Touch Gesture Controller
+		// UNIVERSAL INPUT: Touchpad, Mouse Drag, Touch Screen, Wheel Zoom
 		public override void _Input(InputEvent @event)
 		{
-			// 1. Zoom Wheel / Touchpad Two-Finger Scroll
+			// Zoom Wheel / Two-Finger Touchpad Scroll
 			if (@event is InputEventMouseButton mb)
 			{
 				if (mb.IsPressed())
@@ -149,11 +149,9 @@ namespace MoonsTotalWar.Engine
 						GetViewport().SetInputAsHandled();
 						return;
 					}
-					// Left-Click on ground (Laptop Touchpad), Right-Click, or Middle-Click drag
 					else if (mb.ButtonIndex == MouseButton.Left || mb.ButtonIndex == MouseButton.Right || mb.ButtonIndex == MouseButton.Middle)
 					{
-						// Do not drag if mouse is over HUD bar
-						if (mb.Position.Y > 65 && (_inspectorModal == null || !_inspectorModal.Visible))
+						if (mb.Position.Y > 65 && mb.Position.Y < GetViewportRect().Size.Y - 65 && (_inspectorModal == null || !_inspectorModal.Visible))
 						{
 							_isDragging = true;
 							_dragStartMousePos = mb.Position;
@@ -170,7 +168,6 @@ namespace MoonsTotalWar.Engine
 				}
 			}
 
-			// 2. Drag Motion
 			if (@event is InputEventMouseMotion mm && _isDragging)
 			{
 				Vector2 delta = (mm.Position - _dragStartMousePos) / _camera.Zoom.X;
@@ -179,7 +176,6 @@ namespace MoonsTotalWar.Engine
 				return;
 			}
 
-			// 3. Touchscreen / Touchpad Direct Pan Drag
 			if (@event is InputEventScreenDrag sd)
 			{
 				Vector2 delta = sd.Relative / _camera.Zoom.X;
@@ -248,48 +244,47 @@ namespace MoonsTotalWar.Engine
 			}
 		}
 
-		// MASTER AUDITED 23-BUILDING NON-OVERLAPPING LAYOUT
 		private void SpawnAudited23BuildingLayout()
 		{
 			var defs = new[]
 			{
-				// 1. CENTRAL COMMAND: Massive 4x4 Footprint (16 Tiles!)
-				new { Id = "hub_cmd", Name = "Industrial Core", Col = 14, Row = 8, W = 4, H = 4, ColorHex = "#ffffff", Icon = "🏢", Desc = "Central Command Spire" },
+				// 1. CENTRAL COMMAND: Massive 4x4 Footprint (16 Tiles)
+				new { Id = "hub_cmd", Name = "Industrial Core", Col = 14, Row = 8, W = 4, H = 4, ColorHex = "#ffffff", Icon = "🏢" },
 
-				// 2. CITADEL PERIMETER SATELLITES (2x2 Footprint, spaced cleanly)
-				new { Id = "hub_shd", Name = "Planetary Shield", Col = 15, Row = 4, W = 2, H = 2, ColorHex = "#38bdf8", Icon = "🛡️", Desc = "Deflection Shield Generator" },
-				new { Id = "hub_mil", Name = "Orbital Shipyard", Col = 15, Row = 1, W = 2, H = 2, ColorHex = "#ef4444", Icon = "⚔️", Desc = "Fleet Aerospace Foundry" },
-				new { Id = "hub_mgd", Name = "Moongold Obelisk", Col = 15, Row = 13, W = 2, H = 2, ColorHex = "#fbbf24", Icon = "💰", Desc = "Universal Credit Exchange" },
-				new { Id = "hub_arm", Name = "Garrison Armory", Col = 15, Row = 16, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🎖️", Desc = "Garrison Armory Depot" },
+				// 2. CITADEL PERIMETER SATELLITES
+				new { Id = "hub_shd", Name = "Planetary Shield", Col = 15, Row = 4, W = 2, H = 2, ColorHex = "#38bdf8", Icon = "🛡️" },
+				new { Id = "hub_mil", Name = "Orbital Shipyard", Col = 15, Row = 1, W = 2, H = 2, ColorHex = "#ef4444", Icon = "⚔️" },
+				new { Id = "hub_mgd", Name = "Moongold Obelisk", Col = 15, Row = 13, W = 2, H = 2, ColorHex = "#fbbf24", Icon = "💰" },
+				new { Id = "hub_arm", Name = "Garrison Armory", Col = 15, Row = 16, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🎖️" },
 
 				// 3. RESEARCH, FLEET, RADAR & LOGISTICS
-				new { Id = "hub_com", Name = "Commanders Spire", Col = 10, Row = 5, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🤝", Desc = "Diplomacy & Comms Spire" },
-				new { Id = "hub_flt", Name = "Fleet Station", Col = 20, Row = 5, W = 2, H = 2, ColorHex = "#3b82f6", Icon = "🛰️", Desc = "Fleet Operations Station" },
-				new { Id = "hub_rng", Name = "The Deep Radar", Col = 7, Row = 2, W = 2, H = 2, ColorHex = "#f59e0b", Icon = "📡", Desc = "5,000 Moons Deep Radar" },
-				new { Id = "hub_trd", Name = "Trade Logistics", Col = 23, Row = 2, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "📦", Desc = "Logistics Trade Hub" },
-				new { Id = "hub_rsh", Name = "Research Directorate", Col = 4, Row = 5, W = 2, H = 2, ColorHex = "#a855f7", Icon = "🔬", Desc = "Advanced Science Division" },
+				new { Id = "hub_com", Name = "Commanders Spire", Col = 10, Row = 5, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🤝" },
+				new { Id = "hub_flt", Name = "Fleet Station", Col = 20, Row = 5, W = 2, H = 2, ColorHex = "#3b82f6", Icon = "🛰️" },
+				new { Id = "hub_rng", Name = "The Deep Radar", Col = 7, Row = 2, W = 2, H = 2, ColorHex = "#f59e0b", Icon = "📡" },
+				new { Id = "hub_trd", Name = "Trade Logistics", Col = 23, Row = 2, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "📦" },
+				new { Id = "hub_rsh", Name = "Research Directorate", Col = 4, Row = 5, W = 2, H = 2, ColorHex = "#a855f7", Icon = "🔬" },
 
 				// 4. WEST POWER DISTRICT (3 FUSION COILS)
-				new { Id = "dist_e_0", Name = "Power Station A", Col = 8, Row = 8, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡", Desc = "Fusion Reactor Grid A" },
-				new { Id = "dist_e_1", Name = "Power Station B", Col = 5, Row = 10, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡", Desc = "Fusion Reactor Grid B" },
-				new { Id = "dist_e_2", Name = "Power Station C", Col = 8, Row = 12, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡", Desc = "Fusion Reactor Grid C" },
+				new { Id = "dist_e_0", Name = "Power Station A", Col = 8, Row = 8, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
+				new { Id = "dist_e_1", Name = "Power Station B", Col = 5, Row = 10, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
+				new { Id = "dist_e_2", Name = "Power Station C", Col = 8, Row = 12, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
 
 				// 5. SOUTH-WEST IRON EXTRACTION QUARRY (3 MINES)
-				new { Id = "dist_i_0", Name = "Iron Mine A", Col = 11, Row = 13, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️", Desc = "Magnetic Iron Excavator A" },
-				new { Id = "dist_i_1", Name = "Iron Mine B", Col = 8, Row = 15, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️", Desc = "Magnetic Iron Excavator B" },
-				new { Id = "dist_i_2", Name = "Iron Mine C", Col = 11, Row = 17, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️", Desc = "Magnetic Iron Excavator C" },
+				new { Id = "dist_i_0", Name = "Iron Mine A", Col = 11, Row = 13, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
+				new { Id = "dist_i_1", Name = "Iron Mine B", Col = 8, Row = 15, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
+				new { Id = "dist_i_2", Name = "Iron Mine C", Col = 11, Row = 17, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
 
-				// 6. SOUTH-EAST TITANIUM SMELTER COMPLEX (3 EXTRACTORS)
-				new { Id = "dist_t_0", Name = "Titanium Smelter A", Col = 19, Row = 13, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎", Desc = "Titanium Alloy Smelter A" },
-				new { Id = "dist_t_1", Name = "Titanium Smelter B", Col = 22, Row = 15, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎", Desc = "Titanium Alloy Smelter B" },
-				new { Id = "dist_t_2", Name = "Titanium Smelter C", Col = 19, Row = 17, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎", Desc = "Titanium Alloy Smelter C" },
+				// 6. SOUTH-EAST TITANIUM SMELTER COMPLEX (3 EXTRACTORS - Strict 2-tile buffer)
+				new { Id = "dist_t_0", Name = "Titanium Smelter A", Col = 19, Row = 13, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
+				new { Id = "dist_t_1", Name = "Titanium Smelter B", Col = 22, Row = 16, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
+				new { Id = "dist_t_2", Name = "Titanium Smelter C", Col = 19, Row = 17, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
 
-				// 7. EAST HELIUM-3 FUEL CRYO FIELD (5 GAS DISTILLERIES)
-				new { Id = "dist_h3_0", Name = "H3 Distillery A", Col = 21, Row = 8, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽", Desc = "Cryo Gas Distillery A" },
-				new { Id = "dist_h3_1", Name = "H3 Distillery B", Col = 24, Row = 9, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽", Desc = "Cryo Gas Distillery B" },
-				new { Id = "dist_h3_2", Name = "H3 Distillery C", Col = 21, Row = 11, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽", Desc = "Cryo Gas Distillery C" },
-				new { Id = "dist_h3_3", Name = "H3 Distillery D", Col = 24, Row = 12, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽", Desc = "Cryo Gas Distillery D" },
-				new { Id = "dist_h3_4", Name = "H3 Distillery E", Col = 21, Row = 14, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽", Desc = "Cryo Gas Distillery E" }
+				// 7. EAST HELIUM-3 FUEL CRYO FIELD (5 GAS DISTILLERIES - Strict 2-tile buffer)
+				new { Id = "dist_h3_0", Name = "H3 Distillery A", Col = 22, Row = 8, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
+				new { Id = "dist_h3_1", Name = "H3 Distillery B", Col = 25, Row = 9, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
+				new { Id = "dist_h3_2", Name = "H3 Distillery C", Col = 22, Row = 11, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
+				new { Id = "dist_h3_3", Name = "H3 Distillery D", Col = 25, Row = 12, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
+				new { Id = "dist_h3_4", Name = "H3 Distillery E", Col = 22, Row = 14, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" }
 			};
 
 			foreach (var def in defs)
@@ -315,7 +310,6 @@ namespace MoonsTotalWar.Engine
 				Vector2 lBottom = bottom - center;
 				Vector2 lLeft = left - center;
 
-				// Diamond Foundation Polygon
 				Polygon2D poly = new Polygon2D
 				{
 					Polygon = new Vector2[] { lTop, lRight, lBottom, lLeft },
@@ -323,7 +317,6 @@ namespace MoonsTotalWar.Engine
 				};
 				nodeAnchor.AddChild(poly);
 
-				// Glowing perimeter outline
 				Line2D outline = new Line2D
 				{
 					Width = def.W >= 4 ? 3.0f : 2.0f,
@@ -337,7 +330,6 @@ namespace MoonsTotalWar.Engine
 				outline.AddPoint(lTop);
 				nodeAnchor.AddChild(outline);
 
-				// Interactive Click Button
 				float btnWidth = def.W >= 4 ? 180 : 130;
 				float btnHeight = def.W >= 4 ? 64 : 52;
 
@@ -368,8 +360,6 @@ namespace MoonsTotalWar.Engine
 					CornerRadiusBottomRight = 4
 				};
 				clickArea.AddThemeStyleboxOverride("normal", style);
-				clickArea.AddThemeStyleboxOverride("hover", style);
-				clickArea.AddThemeStyleboxOverride("pressed", style);
 
 				string bId = def.Id;
 				string bName = def.Name;
