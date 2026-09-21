@@ -5,8 +5,9 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v17.0 Audited 48x50 Terrain Grid)
+	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v22.0 Audited 48x50 Terrain Grid)
 	/// - Calibrated 48x50 Grid covering the North-East plateau and deep South-West basin.
+	/// - Exact 4500x2512 Terrain Backdrop with 4-Border Camera Clamping.
 	/// - Central Citadel: 4x4 (16 Tiles) Industrial Core.
 	/// - 22 Satellite Facilities: 2x2 Footprint with strictly non-overlapping coordinates.
 	/// - Interactive Clash of Kings Base Layout Editor with Directional Reticle & Collision Validation.
@@ -17,10 +18,18 @@ namespace MoonsTotalWar.Engine
 		[Export] public Texture2D TerrainTexture;
 
 		public const int GRID_COLS = 48; // 48 Columns for wide North-East reach
-		public const int GRID_ROWS = 50; // 50 Rows for deep South / South-West coverage
+		public const int GRID_ROWS = 50; // 50 Rows for deep South-West coverage
 
 		public const float TILE_WIDTH_HALF = 40.0f;
 		public const float TILE_HEIGHT_HALF = 22.5f;
+
+		// Exact Native Terrain Image Dimensions
+		public const float TERRAIN_WIDTH = 4500.0f;
+		public const float TERRAIN_HEIGHT = 2512.0f;
+
+		// Zoom Limits (Clamped to prevent zooming out past the terrain boundaries)
+		public const float MIN_ZOOM = 0.52f;
+		public const float MAX_ZOOM = 2.0f;
 
 		// Camera Viewport Controller
 		private Camera2D _camera;
@@ -29,6 +38,7 @@ namespace MoonsTotalWar.Engine
 		private bool _isDraggingCamera = false;
 		private Vector2 _dragStartMousePos;
 		private Vector2 _dragStartCameraPos;
+		private Vector2 _terrainCenterPos = Vector2.Zero;
 
 		// Nodes
 		private Sprite2D _terrainSprite;
@@ -69,8 +79,9 @@ namespace MoonsTotalWar.Engine
 
 		public override void _Ready()
 		{
-			// Center camera across the 48x50 grid terrain
-			Vector2 baseCenter = GridToIso(22, 22);
+			// Center of the 48x50 grid
+			Vector2 baseCenter = GridToIso(24, 25);
+			_terrainCenterPos = baseCenter;
 
 			// 1. Initialize Camera
 			_camera = GetNodeOrNull<Camera2D>("Camera2D");
@@ -85,7 +96,7 @@ namespace MoonsTotalWar.Engine
 			_camera.Zoom = new Vector2(_targetZoom, _targetZoom);
 			_camera.MakeCurrent();
 
-			// 2. Build Terrain Backdrop
+			// 2. Build Terrain Backdrop (4500 x 2512 Native Size)
 			BuildTerrainBackdrop(baseCenter);
 
 			// 3. Build Isometric Grid Lines
@@ -119,20 +130,18 @@ namespace MoonsTotalWar.Engine
 			_inspectorModal.BuildingUpgraded += OnBuildingUpgraded;
 			_modalLayer.AddChild(_inspectorModal);
 
-			GD.Print($"[BASE VIEW] Initialization complete. 48x50 Grid centered at {baseCenter}");
+			// Clamp camera initially to ensure it starts inside the terrain bounds
+			_targetCameraPos = ClampCameraPosition(_targetCameraPos, _targetZoom);
+			_camera.Position = _targetCameraPos;
+
+			GD.Print($"[BASE VIEW] Initialization complete. 48x50 Grid centered at {baseCenter}. 4-Border Camera Clamping Active.");
 		}
 
 		public override void _Process(double delta)
 		{
 			float dt = (float)delta;
 
-			if (_camera != null)
-			{
-				_camera.Position = _camera.Position.Lerp(_targetCameraPos, dt * 14.0f);
-				_camera.Zoom = _camera.Zoom.Lerp(new Vector2(_targetZoom, _targetZoom), dt * 14.0f);
-			}
-
-			// Keyboard WASD Navigation
+			// Keyboard WASD / Arrow Navigation
 			Vector2 panDir = Vector2.Zero;
 			if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up)) panDir.Y -= 1.0f;
 			if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down)) panDir.Y += 1.0f;
@@ -143,6 +152,15 @@ namespace MoonsTotalWar.Engine
 			{
 				float speed = 850.0f / _targetZoom;
 				_targetCameraPos += panDir.Normalized() * speed * dt;
+			}
+
+			// Enforce 4-border clamp on camera position every frame
+			_targetCameraPos = ClampCameraPosition(_targetCameraPos, _targetZoom);
+
+			if (_camera != null)
+			{
+				_camera.Position = _camera.Position.Lerp(_targetCameraPos, dt * 14.0f);
+				_camera.Zoom = _camera.Zoom.Lerp(new Vector2(_targetZoom, _targetZoom), dt * 14.0f);
 			}
 		}
 
@@ -155,13 +173,15 @@ namespace MoonsTotalWar.Engine
 				{
 					if (mb.ButtonIndex == MouseButton.WheelUp)
 					{
-						_targetZoom = Mathf.Clamp(_targetZoom * 1.12f, 0.45f, 2.4f);
+						_targetZoom = Mathf.Clamp(_targetZoom * 1.12f, MIN_ZOOM, MAX_ZOOM);
+						_targetCameraPos = ClampCameraPosition(_targetCameraPos, _targetZoom);
 						GetViewport().SetInputAsHandled();
 						return;
 					}
 					else if (mb.ButtonIndex == MouseButton.WheelDown)
 					{
-						_targetZoom = Mathf.Clamp(_targetZoom * 0.88f, 0.45f, 2.4f);
+						_targetZoom = Mathf.Clamp(_targetZoom * 0.88f, MIN_ZOOM, MAX_ZOOM);
+						_targetCameraPos = ClampCameraPosition(_targetCameraPos, _targetZoom);
 						GetViewport().SetInputAsHandled();
 						return;
 					}
@@ -187,7 +207,7 @@ namespace MoonsTotalWar.Engine
 			if (@event is InputEventMouseMotion mm && _isDraggingCamera)
 			{
 				Vector2 delta = (mm.Position - _dragStartMousePos) / _camera.Zoom.X;
-				_targetCameraPos = _dragStartCameraPos - delta;
+				_targetCameraPos = ClampCameraPosition(_dragStartCameraPos - delta, _targetZoom);
 				GetViewport().SetInputAsHandled();
 				return;
 			}
@@ -195,10 +215,34 @@ namespace MoonsTotalWar.Engine
 			if (@event is InputEventScreenDrag sd)
 			{
 				Vector2 delta = sd.Relative / _camera.Zoom.X;
-				_targetCameraPos -= delta;
+				_targetCameraPos = ClampCameraPosition(_targetCameraPos - delta, _targetZoom);
 				GetViewport().SetInputAsHandled();
 				return;
 			}
+		}
+
+		/// <summary>
+		/// Clamps the camera position so the visible screen viewport never views beyond the 4500x2512 terrain background bounds.
+		/// </summary>
+		private Vector2 ClampCameraPosition(Vector2 rawPos, float currentZoom)
+		{
+			Vector2 viewportSize = GetViewportRect().Size;
+			float visibleWidth = viewportSize.X / currentZoom;
+			float visibleHeight = viewportSize.Y / currentZoom;
+
+			float halfTerrainW = TERRAIN_WIDTH * 0.5f;
+			float halfTerrainH = TERRAIN_HEIGHT * 0.5f;
+
+			float minX = _terrainCenterPos.X - halfTerrainW + (visibleWidth * 0.5f);
+			float maxX = _terrainCenterPos.X + halfTerrainW - (visibleWidth * 0.5f);
+			float minY = _terrainCenterPos.Y - halfTerrainH + (visibleHeight * 0.5f);
+			float maxY = _terrainCenterPos.Y + halfTerrainH - (visibleHeight * 0.5f);
+
+			// If zoomed out so far that visible size exceeds terrain size, center on terrain
+			float clampedX = (minX > maxX) ? _terrainCenterPos.X : Mathf.Clamp(rawPos.X, minX, maxX);
+			float clampedY = (minY > maxY) ? _terrainCenterPos.Y : Mathf.Clamp(rawPos.Y, minY, maxY);
+
+			return new Vector2(clampedX, clampedY);
 		}
 
 		public static Vector2 GridToIso(int col, int row)
@@ -227,8 +271,8 @@ namespace MoonsTotalWar.Engine
 				_terrainSprite.Texture = texToUse;
 				_terrainSprite.Position = baseCenter;
 
-				float desiredWidth = 4700.0f;
-				float scaleFactor = desiredWidth / texToUse.GetWidth();
+				// Scale to match exact 4500px width
+				float scaleFactor = TERRAIN_WIDTH / texToUse.GetWidth();
 				_terrainSprite.Scale = new Vector2(scaleFactor, scaleFactor);
 
 				AddChild(_terrainSprite);
@@ -432,7 +476,7 @@ namespace MoonsTotalWar.Engine
 		}
 
 		// =========================================================================
-		// 8. CLASH OF KINGS BASE LAYOUT RELOCATION & TELEPORT CONTROLLER
+		// CLASH OF KINGS BASE LAYOUT RELOCATION & TELEPORT CONTROLLER
 		// =========================================================================
 		private void OnEditModeToggled(bool isEditing)
 		{
