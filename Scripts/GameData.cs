@@ -59,7 +59,7 @@ namespace MoonsTotalWar.Engine
 	}
 
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER DATA REGISTRY (C# Godot 4 Edition)
+	/// MOONS TOTAL WAR: MASTER DATA REGISTRY (C# Godot 4 Edition - 25 Building Matrix)
 	/// </summary>
 	public static class GameData
 	{
@@ -86,15 +86,17 @@ namespace MoonsTotalWar.Engine
 
 		public static readonly List<FacilityDef> Facilities = new List<FacilityDef>
 		{
-			new FacilityDef { Id = 5, Code = "cmd", Name = "Industrial Hub Core", Icon = "🏢", ColorHex = "#ffffff", ReqText = "None", BaseE = 1500, BaseI = 2000, BaseT = 800, BaseH = 0, Desc = "Central command spire. Governs resource storage ceilings and structural armor ratings." },
-			new FacilityDef { Id = 6, Code = "com", Name = "Commanders Hub", Icon = "🤝", ColorHex = "#22c55e", ReqText = "None", BaseE = 3000, BaseI = 5000, BaseT = 1500, BaseH = 0, Desc = "Diplomatic link relay. Unlocks alliance founding, treaties, and global division rankings." },
+			new FacilityDef { Id = 5, Code = "cmd", Name = "Industrial Hub Core", Icon = "🏢", ColorHex = "#ffffff", ReqText = "None", BaseE = 1500, BaseI = 2000, BaseT = 800, BaseH = 0, Desc = "Central command spire. Governs sector tech expansion ceilings and structural armor ratings." },
+			new FacilityDef { Id = 6, Code = "com", Name = "Commanders Spire", Icon = "🤝", ColorHex = "#22c55e", ReqText = "None", BaseE = 3000, BaseI = 5000, BaseT = 1500, BaseH = 0, Desc = "Diplomatic link relay. Unlocks global division rankings and commander credentials." },
 			new FacilityDef { Id = 7, Code = "flt", Name = "Fleet Station", Icon = "🛰️", ColorHex = "#3b82f6", ReqText = "Hub Lvl 1", BaseE = 7500, BaseI = 12000, BaseT = 5000, BaseH = 100, Desc = "Orbital flight operations center. Manages tactical strike group manifests and deployment." },
-			new FacilityDef { Id = 8, Code = "rng", Name = "The Deep Radar", Icon = "📡", ColorHex = "#f59e0b", ReqText = "Fleet Lvl 1", BaseE = 3000, BaseI = 5000, BaseT = 2000, BaseH = 50, Desc = "Long-range sensor array. Scans up to 5,000 moons across the galaxy for hostiles and vacant sectors." },
+			new FacilityDef { Id = 8, Code = "rng", Name = "The Deep Radar", Icon = "📡", ColorHex = "#f59e0b", ReqText = "Fleet Lvl 1", BaseE = 3000, BaseI = 5000, BaseT = 2000, BaseH = 50, Desc = "Long-range sensor array. Scans up to 1,000 moons across the galaxy for hostiles and vacant sectors." },
 			new FacilityDef { Id = 9, Code = "mil", Name = "Orbital Shipyard", Icon = "⚔️", ColorHex = "#ef4444", ReqText = "Fleet Lvl 1", BaseE = 5000, BaseI = 8000, BaseT = 3000, BaseH = 200, Desc = "Heavy aerospace foundry. Assembles combat rovers, missile frigates, dreadnoughts, and colony ships." },
 			new FacilityDef { Id = 10, Code = "trd", Name = "Trade Logistics Lab", Icon = "📦", ColorHex = "#06b6d4", ReqText = "Radar Lvl 1", BaseE = 12000, BaseI = 18000, BaseT = 8000, BaseH = 500, Desc = "Galactic commerce network. Enables inter-colony supply transfers and alliance economic aid." },
 			new FacilityDef { Id = 11, Code = "rsh", Name = "Research Directorate", Icon = "🔬", ColorHex = "#a855f7", ReqText = "Shipyard Lvl 1", BaseE = 15000, BaseI = 20000, BaseT = 15000, BaseH = 1000, Desc = "Advanced science division. Unlocks higher-tier warship blueprints and energy technologies." },
 			new FacilityDef { Id = 12, Code = "shd", Name = "Planetary Shield Lab", Icon = "🛡️", ColorHex = "#38bdf8", ReqText = "Research Lvl 5", BaseE = 25000, BaseI = 40000, BaseT = 20000, BaseH = 2000, Desc = "High-yield deflection generator. Mitigates casualty rates during planetary bombardments." },
-			new FacilityDef { Id = 13, Code = "mgd", Name = "Moongold Exchange", Icon = "💰", ColorHex = "#fbbf24", ReqText = "None", BaseE = 0, BaseI = 0, BaseT = 0, BaseH = 0, Desc = "Universal credit bank. Purchase Moongold to instantly bypass queues and accelerate production." }
+			new FacilityDef { Id = 13, Code = "mgd", Name = "Moongold Exchange", Icon = "💰", ColorHex = "#fbbf24", ReqText = "None", BaseE = 0, BaseI = 0, BaseT = 0, BaseH = 0, Desc = "Universal credit bank. Purchase Moongold to instantly bypass queues and accelerate production." },
+			new FacilityDef { Id = 14, Code = "ahq", Name = "Alliance HQ", Icon = "🏛️", ColorHex = "#38bdf8", ReqText = "Hub Lvl 2", BaseE = 6000, BaseI = 8000, BaseT = 4000, BaseH = 500, Desc = "Central embassy for Alliance treaty coordination, member reinforcement rallies, and joint planetary wars." },
+			new FacilityDef { Id = 15, Code = "silo", Name = "Storage Silos", Icon = "🛢️", ColorHex = "#00f0ff", ReqText = "Hub Lvl 1", BaseE = 2000, BaseI = 3000, BaseT = 1000, BaseH = 0, Desc = "High-capacity pressurized containment vaults. Expands global storage limits for Energy, Iron, Titanium, and Helium-3." }
 		};
 
 		public static readonly List<ServerDef> Servers = new List<ServerDef>

@@ -5,11 +5,11 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v22.0 Audited 48x50 Terrain Grid)
+	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v25.0 - 25 Building Layout Matrix)
 	/// - Calibrated 48x50 Grid covering the North-East plateau and deep South-West basin.
 	/// - Exact 4500x2512 Terrain Backdrop with 4-Border Camera Clamping.
 	/// - Central Citadel: 4x4 (16 Tiles) Industrial Core.
-	/// - 22 Satellite Facilities: 2x2 Footprint with strictly non-overlapping coordinates.
+	/// - 24 Satellite Facilities (including Alliance HQ at [19,11] and Storage Silos at [20,23]).
 	/// - Interactive Clash of Kings Base Layout Editor with Directional Reticle & Collision Validation.
 	/// - Universal Touchpad, Mouse, Touch Panning, and Zooming.
 	/// </summary>
@@ -104,10 +104,10 @@ namespace MoonsTotalWar.Engine
 			AddChild(_gridLineCanvas);
 			DrawIsometricGridLines();
 
-			// 4. Build 23 Buildings Container
+			// 4. Build 25 Buildings Container
 			_buildingContainer = new Node2D { Name = "BuildingContainer", ZIndex = 2 };
 			AddChild(_buildingContainer);
-			SpawnAudited23BuildingLayout();
+			SpawnAudited25BuildingLayout();
 
 			// 5. Build Teleport Reticle Container
 			_teleportReticleContainer = new Node2D { Name = "TeleportReticleContainer", ZIndex = 5000 };
@@ -134,7 +134,7 @@ namespace MoonsTotalWar.Engine
 			_targetCameraPos = ClampCameraPosition(_targetCameraPos, _targetZoom);
 			_camera.Position = _targetCameraPos;
 
-			GD.Print($"[BASE VIEW] Initialization complete. 48x50 Grid centered at {baseCenter}. 4-Border Camera Clamping Active.");
+			GD.Print($"[BASE VIEW] Initialization complete. 48x50 Grid centered at {baseCenter}. 25 Buildings Deployed.");
 		}
 
 		public override void _Process(double delta)
@@ -222,23 +222,22 @@ namespace MoonsTotalWar.Engine
 		}
 
 		/// <summary>
-		/// Clamps the camera position so the visible screen viewport never views beyond the 4500x2512 terrain background bounds.
+		/// Clamps camera position so viewport never views beyond 4500x2512 terrain boundaries.
 		/// </summary>
-		private Vector2 ClampCameraPosition(Vector2 rawPos, float currentZoom)
+		public Vector2 ClampCameraPosition(Vector2 rawPos, float currentZoom)
 		{
-			Vector2 viewportSize = GetViewportRect().Size;
-			float visibleWidth = viewportSize.X / currentZoom;
-			float visibleHeight = viewportSize.Y / currentZoom;
+			Vector2 vpSize = GetViewportRect().Size;
+			float visibleHalfWidth = (vpSize.X / currentZoom) * 0.5f;
+			float visibleHalfHeight = (vpSize.Y / currentZoom) * 0.5f;
 
-			float halfTerrainW = TERRAIN_WIDTH * 0.5f;
-			float halfTerrainH = TERRAIN_HEIGHT * 0.5f;
+			float terrainHalfW = TERRAIN_WIDTH * 0.5f;
+			float terrainHalfH = TERRAIN_HEIGHT * 0.5f;
 
-			float minX = _terrainCenterPos.X - halfTerrainW + (visibleWidth * 0.5f);
-			float maxX = _terrainCenterPos.X + halfTerrainW - (visibleWidth * 0.5f);
-			float minY = _terrainCenterPos.Y - halfTerrainH + (visibleHeight * 0.5f);
-			float maxY = _terrainCenterPos.Y + halfTerrainH - (visibleHeight * 0.5f);
+			float minX = (_terrainCenterPos.X - terrainHalfW) + visibleHalfWidth;
+			float maxX = (_terrainCenterPos.X + terrainHalfW) - visibleHalfWidth;
+			float minY = (_terrainCenterPos.Y - terrainHalfH) + visibleHalfHeight;
+			float maxY = (_terrainCenterPos.Y + terrainHalfH) - visibleHalfHeight;
 
-			// If zoomed out so far that visible size exceeds terrain size, center on terrain
 			float clampedX = (minX > maxX) ? _terrainCenterPos.X : Mathf.Clamp(rawPos.X, minX, maxX);
 			float clampedY = (minY > maxY) ? _terrainCenterPos.Y : Mathf.Clamp(rawPos.Y, minY, maxY);
 
@@ -270,11 +269,7 @@ namespace MoonsTotalWar.Engine
 			{
 				_terrainSprite.Texture = texToUse;
 				_terrainSprite.Position = baseCenter;
-
-				// Scale to match exact 4500px width
-				float scaleFactor = TERRAIN_WIDTH / texToUse.GetWidth();
-				_terrainSprite.Scale = new Vector2(scaleFactor, scaleFactor);
-
+				_terrainSprite.Scale = Vector2.One; // 1:1 Pixel Mapping
 				AddChild(_terrainSprite);
 			}
 		}
@@ -283,7 +278,6 @@ namespace MoonsTotalWar.Engine
 		{
 			Color gridColor = new Color(0f, 0.94f, 1f, 0.28f);
 
-			// Draw horizontal row isometric diagonals across all 48 columns
 			for (int r = 0; r <= GRID_ROWS; r++)
 			{
 				Vector2 start = GridToIso(0, r);
@@ -294,7 +288,6 @@ namespace MoonsTotalWar.Engine
 				_gridLineCanvas.AddChild(line);
 			}
 
-			// Draw column isometric diagonals across all 50 rows
 			for (int c = 0; c <= GRID_COLS; c++)
 			{
 				Vector2 start = GridToIso(c, 0);
@@ -306,7 +299,7 @@ namespace MoonsTotalWar.Engine
 			}
 		}
 
-		private void SpawnAudited23BuildingLayout()
+		private void SpawnAudited25BuildingLayout()
 		{
 			var defs = new[]
 			{
@@ -316,32 +309,38 @@ namespace MoonsTotalWar.Engine
 				// 2. CITADEL PERIMETER SATELLITES
 				new { Id = "hub_shd", Name = "Planetary Shield", Col = 21, Row = 14, W = 2, H = 2, ColorHex = "#38bdf8", Icon = "🛡️" },
 				new { Id = "hub_mil", Name = "Orbital Shipyard", Col = 21, Row = 11, W = 2, H = 2, ColorHex = "#ef4444", Icon = "⚔️" },
-				new { Id = "hub_mgd", Name = "Moongold Obelisk", Col = 21, Row = 23, W = 2, H = 2, ColorHex = "#fbbf24", Icon = "💰" },
-				new { Id = "hub_arm", Name = "Garrison Armory", Col = 21, Row = 26, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🎖️" },
+				new { Id = "hub_mgd", Name = "Moongold Obelisk", Col = 21, Row = 26, W = 2, H = 2, ColorHex = "#fbbf24", Icon = "💰" },
+				new { Id = "hub_arm", Name = "Garrison Armory", Col = 21, Row = 29, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🎖️" },
 
-				// 3. RESEARCH, FLEET, RADAR & LOGISTICS
+				// 3. ALLIANCE HQ (24th Building - Dedicated Embassy Node)
+				new { Id = "hub_ahq", Name = "Alliance HQ", Col = 19, Row = 11, W = 2, H = 2, ColorHex = "#38bdf8", Icon = "🏛️" },
+
+				// 4. STORAGE SILOS (25th Building - Dedicated Resource Containment Vault)
+				new { Id = "hub_silo", Name = "Storage Silos", Col = 20, Row = 23, W = 2, H = 2, ColorHex = "#00f0ff", Icon = "🛢️" },
+
+				// 5. RESEARCH, FLEET, RADAR & LOGISTICS
 				new { Id = "hub_com", Name = "Commanders Spire", Col = 16, Row = 15, W = 2, H = 2, ColorHex = "#22c55e", Icon = "🤝" },
 				new { Id = "hub_flt", Name = "Fleet Station", Col = 26, Row = 15, W = 2, H = 2, ColorHex = "#3b82f6", Icon = "🛰️" },
 				new { Id = "hub_rng", Name = "The Deep Radar", Col = 13, Row = 12, W = 2, H = 2, ColorHex = "#f59e0b", Icon = "📡" },
 				new { Id = "hub_trd", Name = "Trade Logistics", Col = 29, Row = 12, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "📦" },
 				new { Id = "hub_rsh", Name = "Research Directorate", Col = 10, Row = 15, W = 2, H = 2, ColorHex = "#a855f7", Icon = "🔬" },
 
-				// 4. WEST POWER DISTRICT (3 FUSION COILS)
+				// 6. WEST POWER DISTRICT (3 FUSION COILS)
 				new { Id = "dist_e_0", Name = "Power Station A", Col = 14, Row = 18, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
 				new { Id = "dist_e_1", Name = "Power Station B", Col = 11, Row = 20, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
 				new { Id = "dist_e_2", Name = "Power Station C", Col = 14, Row = 22, W = 2, H = 2, ColorHex = "#d946ef", Icon = "⚡" },
 
-				// 5. SOUTH-WEST IRON EXTRACTION QUARRY (3 MINES)
-				new { Id = "dist_i_0", Name = "Iron Mine A", Col = 17, Row = 23, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
-				new { Id = "dist_i_1", Name = "Iron Mine B", Col = 14, Row = 25, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
-				new { Id = "dist_i_2", Name = "Iron Mine C", Col = 17, Row = 27, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
+				// 7. SOUTH-WEST IRON EXTRACTION QUARRY (3 MINES)
+				new { Id = "dist_i_0", Name = "Iron Mine A", Col = 17, Row = 25, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
+				new { Id = "dist_i_1", Name = "Iron Mine B", Col = 14, Row = 27, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
+				new { Id = "dist_i_2", Name = "Iron Mine C", Col = 17, Row = 29, W = 2, H = 2, ColorHex = "#06b6d4", Icon = "⛏️" },
 
-				// 6. SOUTH-EAST TITANIUM SMELTER COMPLEX (3 EXTRACTORS - Strict 2-tile buffer)
+				// 8. SOUTH-EAST TITANIUM SMELTER COMPLEX (3 EXTRACTORS)
 				new { Id = "dist_t_0", Name = "Titanium Smelter A", Col = 25, Row = 23, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
 				new { Id = "dist_t_1", Name = "Titanium Smelter B", Col = 28, Row = 26, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
 				new { Id = "dist_t_2", Name = "Titanium Smelter C", Col = 25, Row = 27, W = 2, H = 2, ColorHex = "#94a3b8", Icon = "💎" },
 
-				// 7. EAST HELIUM-3 FUEL CRYO FIELD (5 GAS DISTILLERIES - Strict 2-tile buffer)
+				// 9. EAST HELIUM-3 FUEL CRYO FIELD (5 GAS DISTILLERIES)
 				new { Id = "dist_h3_0", Name = "H3 Distillery A", Col = 28, Row = 18, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
 				new { Id = "dist_h3_1", Name = "H3 Distillery B", Col = 31, Row = 19, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
 				new { Id = "dist_h3_2", Name = "H3 Distillery C", Col = 28, Row = 21, W = 2, H = 2, ColorHex = "#eab308", Icon = "⛽" },
@@ -475,9 +474,6 @@ namespace MoonsTotalWar.Engine
 			}
 		}
 
-		// =========================================================================
-		// CLASH OF KINGS BASE LAYOUT RELOCATION & TELEPORT CONTROLLER
-		// =========================================================================
 		private void OnEditModeToggled(bool isEditing)
 		{
 			IsEditLayoutMode = isEditing;

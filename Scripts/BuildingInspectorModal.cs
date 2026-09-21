@@ -5,9 +5,9 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER TACTICAL FACILITY INSPECTOR MODAL (v7.0 Screen-Centered)
+	/// MOONS TOTAL WAR: MASTER TACTICAL FACILITY INSPECTOR MODAL (v9.0 25 Building Edition)
 	/// - Dynamically centers on physical screen viewport on open.
-	/// - Specialized menus for Shipyards, Refineries, Radars (1,000 moons), and Obelisks.
+	/// - Specialized menus for Shipyards, Refineries, Radars, Alliance HQ, Silos, and Obelisks.
 	/// </summary>
 	public partial class BuildingInspectorModal : Control
 	{
@@ -186,6 +186,14 @@ namespace MoonsTotalWar.Engine
 			{
 				BuildShipyardArmoryMenu();
 			}
+			else if (buildingId == "hub_silo")
+			{
+				BuildSiloMenu();
+			}
+			else if (buildingId == "hub_ahq")
+			{
+				BuildAllianceHQMenu();
+			}
 			else if (buildingId.StartsWith("dist_h3_"))
 			{
 				BuildHelium3DistilleryMenu();
@@ -208,6 +216,66 @@ namespace MoonsTotalWar.Engine
 			}
 
 			Visible = true;
+		}
+
+		private void BuildSiloMenu()
+		{
+			long currentCap = GameMath.CalcStorageCap(ActiveBuildingLevel);
+			long nextCap = GameMath.CalcStorageCap(ActiveBuildingLevel + 1);
+
+			Panel infoBox = CreateCardPanel(80);
+			VBoxContainer infoContent = CreateCardContainer(infoBox);
+
+			Label lblTitle = new Label { Text = "PRESSURIZED CONTAINMENT VAULT STATUS:", Modulate = new Color("#00F0FF") };
+			lblTitle.AddThemeFontSizeOverride("font_size", 9);
+
+			Label lblCap = new Label
+			{
+				Text = $"Global Resource Ceiling: {currentCap:N0} Units\nNext Upgrade Ceiling: {nextCap:N0} Units (+{(nextCap - currentCap):N0})",
+				Modulate = Colors.White
+			};
+			lblCap.AddThemeFontSizeOverride("font_size", 10);
+
+			infoContent.AddChild(lblTitle);
+			infoContent.AddChild(lblCap);
+			_contentStack.AddChild(infoBox);
+
+			AddUpgradeCostSection();
+		}
+
+		private void BuildAllianceHQMenu()
+		{
+			Panel infoBox = CreateCardPanel(90);
+			VBoxContainer infoContent = CreateCardContainer(infoBox);
+
+			Label lblTitle = new Label { Text = "ALLIANCE EMBASSY & STRATEGIC HIGH COMMAND:", Modulate = new Color("#38BDF8") };
+			lblTitle.AddThemeFontSizeOverride("font_size", 9);
+
+			Label lblDesc = new Label
+			{
+				Text = $"HQ Level: {ActiveBuildingLevel}\nReinforcement Garrison Capacity: {(ActiveBuildingLevel * 25000):N0} Units\nAlliance Rally Speed Bonus: +{(ActiveBuildingLevel * 2.5f):F1}%",
+				Modulate = Colors.White
+			};
+			lblDesc.AddThemeFontSizeOverride("font_size", 10);
+
+			infoContent.AddChild(lblTitle);
+			infoContent.AddChild(lblDesc);
+			_contentStack.AddChild(infoBox);
+
+			Button btnAllianceRally = new Button
+			{
+				Text = "🛡️ OPEN ALLIANCE DIPLOMATIC EMBASSY",
+				CustomMinimumSize = new Vector2(0, 36)
+			};
+			btnAllianceRally.AddThemeFontSizeOverride("font_size", 10);
+			btnAllianceRally.Modulate = new Color("#38BDF8");
+			btnAllianceRally.Pressed += () =>
+			{
+				GD.Print("[ALLIANCE HQ] Diplomatic Interface Initialized.");
+			};
+			_contentStack.AddChild(btnAllianceRally);
+
+			AddUpgradeCostSection();
 		}
 
 		private void BuildStandardMineMenu()
@@ -240,33 +308,23 @@ namespace MoonsTotalWar.Engine
 
 		private void BuildIndustrialCoreMenu()
 		{
-			long currentCap = GameMath.CalcStorageCap(ActiveBuildingLevel);
-			long nextCap = GameMath.CalcStorageCap(ActiveBuildingLevel + 1);
+			double wallMitigation = GameMath.GetWallMitigation(ActiveBuildingLevel);
 
-			Panel infoBox = CreateCardPanel(70);
+			Panel infoBox = CreateCardPanel(75);
 			VBoxContainer infoContent = CreateCardContainer(infoBox);
 
-			Label lblTitle = new Label { Text = "CITADEL CORE CAPACITY & SECTOR DEFENSE:", Modulate = new Color("#94A3B8") };
+			Label lblTitle = new Label { Text = "CENTRAL COMMAND SPIRE & PERIMETER DEFENSE:", Modulate = new Color("#FFFFFF") };
 			lblTitle.AddThemeFontSizeOverride("font_size", 9);
 
-			Label lblCap = new Label
+			Label lblSpire = new Label
 			{
-				Text = $"Resource Storage Ceiling: {currentCap:N0} units (➔ Next: {nextCap:N0})",
-				Modulate = new Color("#00F0FF")
+				Text = $"Command Spire Level: {ActiveBuildingLevel}\nMaximum Sector Building Tech Ceiling: Lvl {ActiveBuildingLevel * 5}\nPerimeter Deflection Mitigation: {(wallMitigation * 100):F1}% Defense",
+				Modulate = new Color("#CBD5E1")
 			};
-			lblCap.AddThemeFontSizeOverride("font_size", 11);
-
-			double wallMitigation = GameMath.GetWallMitigation(ActiveBuildingLevel);
-			Label lblWall = new Label
-			{
-				Text = $"Perimeter Mitigation: {(wallMitigation * 100):F1}% Protection",
-				Modulate = new Color("#D946EF")
-			};
-			lblWall.AddThemeFontSizeOverride("font_size", 10);
+			lblSpire.AddThemeFontSizeOverride("font_size", 10);
 
 			infoContent.AddChild(lblTitle);
-			infoContent.AddChild(lblCap);
-			infoContent.AddChild(lblWall);
+			infoContent.AddChild(lblSpire);
 			_contentStack.AddChild(infoBox);
 
 			AddUpgradeCostSection();
@@ -300,7 +358,6 @@ namespace MoonsTotalWar.Engine
 
 		private void BuildDeepRadarMenu()
 		{
-			// Calibrated to 1,000 moons maximum
 			int maxRange = Math.Min(GameMath.TotalMoons, ActiveBuildingLevel * 100);
 
 			Panel radarBox = CreateCardPanel(100);
