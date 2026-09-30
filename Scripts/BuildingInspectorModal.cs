@@ -5,9 +5,13 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER TACTICAL FACILITY INSPECTOR MODAL (v9.0 25 Building Edition)
+	/// MOONS TOTAL WAR: MASTER TACTICAL FACILITY INSPECTOR MODAL (v17.1 Unified Matrix & Queue Lock Edition)
 	/// - Dynamically centers on physical screen viewport on open.
-	/// - Specialized menus for Shipyards, Refineries, Radars, Alliance HQ, Silos, and Obelisks.
+	/// - Universal Construction Matrix: All buildings display their Core and Sequence requirements in a unified checklist.
+	/// - Queue Lock: Queue button is disabled ("DOCK IDLE") unless an upgrade is already actively running.
+	/// - Tri-Button System: Start Upgrade (Free), Queue Upgrade (25 GGold), Instant Assembly (50 GGold).
+	/// - Premium Boosts: 7-Day and 30-Day production multipliers with Global variants.
+	/// - Transaction Safety Net: Intercepts all GGold purchases with a strict confirmation overlay.
 	/// </summary>
 	public partial class BuildingInspectorModal : Control
 	{
@@ -18,6 +22,11 @@ namespace MoonsTotalWar.Engine
 		public string ActiveBuildingName = "";
 		public int ActiveBuildingLevel = 1;
 		public Color ActiveBuildingColor = Colors.White;
+		public string ActiveDistrictCode = "";
+		public int ActiveSlotIndex = 0;
+		public int[] ActiveDistrictLevels = new int[0];
+		public int CurrentIndustrialCoreLevel = 1;
+		public Dictionary<string, int> AllBuildingLevels = new Dictionary<string, int>();
 
 		private ColorRect _dimBackdrop;
 		private Panel _modalChassis;
@@ -26,6 +35,12 @@ namespace MoonsTotalWar.Engine
 		private Button _btnClose;
 		private ScrollContainer _scrollContainer;
 		private VBoxContainer _contentStack;
+
+		// Confirmation Overlay Nodes
+		private ColorRect _confirmOverlay;
+		private Label _lblConfirmTitle;
+		private Label _lblConfirmMsg;
+		private Action _pendingConfirmAction;
 
 		private Dictionary<string, LineEdit> _unitQtyInputs = new Dictionary<string, LineEdit>();
 		private LineEdit _radarJumpInput;
@@ -36,6 +51,7 @@ namespace MoonsTotalWar.Engine
 			MouseFilter = MouseFilterEnum.Ignore;
 
 			BuildBaseModalFrame();
+			BuildConfirmOverlay();
 			Visible = false;
 		}
 
@@ -58,7 +74,7 @@ namespace MoonsTotalWar.Engine
 			_modalChassis = new Panel
 			{
 				Name = "ModalChassis",
-				CustomMinimumSize = new Vector2(520, 540),
+				CustomMinimumSize = new Vector2(520, 600),
 				MouseFilter = MouseFilterEnum.Stop
 			};
 
@@ -136,12 +152,122 @@ namespace MoonsTotalWar.Engine
 			_scrollContainer.AddChild(_contentStack);
 		}
 
-		public void InspectBuilding(string buildingId, string buildingName, int currentLevel, Color themeColor)
+		private void BuildConfirmOverlay()
+		{
+			_confirmOverlay = new ColorRect
+			{
+				Name = "ConfirmOverlay",
+				Color = new Color(0f, 0f, 0f, 0.85f),
+				Visible = false,
+				ZIndex = 100,
+				MouseFilter = MouseFilterEnum.Stop
+			};
+			_confirmOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
+			AddChild(_confirmOverlay);
+
+			Panel confirmBox = new Panel
+			{
+				CustomMinimumSize = new Vector2(400, 200)
+			};
+			confirmBox.SetAnchorsPreset(LayoutPreset.Center);
+			
+			StyleBoxFlat boxStyle = new StyleBoxFlat
+			{
+				BgColor = new Color(0.06f, 0.09f, 0.14f, 1.0f),
+				BorderColor = new Color("#FBBF24"),
+				BorderWidthLeft = 2,
+				BorderWidthRight = 2,
+				BorderWidthTop = 2,
+				BorderWidthBottom = 2,
+				CornerRadiusTopLeft = 8,
+				CornerRadiusTopRight = 8,
+				CornerRadiusBottomLeft = 8,
+				CornerRadiusBottomRight = 8,
+				ShadowColor = new Color(0f, 0f, 0f, 0.5f),
+				ShadowSize = 20
+			};
+			confirmBox.AddThemeStyleboxOverride("panel", boxStyle);
+			_confirmOverlay.AddChild(confirmBox);
+
+			VBoxContainer vBox = new VBoxContainer();
+			vBox.SetAnchorsPreset(LayoutPreset.FullRect);
+			vBox.OffsetLeft = 20;
+			vBox.OffsetRight = -20;
+			vBox.OffsetTop = 20;
+			vBox.OffsetBottom = -20;
+			vBox.Alignment = BoxContainer.AlignmentMode.Center;
+			vBox.AddThemeConstantOverride("separation", 15);
+			confirmBox.AddChild(vBox);
+
+			_lblConfirmTitle = new Label
+			{
+				Text = "AUTHORIZE TRANSACTION?",
+				HorizontalAlignment = HorizontalAlignment.Center,
+				Modulate = new Color("#FBBF24")
+			};
+			_lblConfirmTitle.AddThemeFontSizeOverride("font_size", 14);
+			vBox.AddChild(_lblConfirmTitle);
+
+			_lblConfirmMsg = new Label
+			{
+				Text = "This action will consume Galaxy Gold.",
+				HorizontalAlignment = HorizontalAlignment.Center,
+				Modulate = Colors.White,
+				AutowrapMode = TextServer.AutowrapMode.WordSmart
+			};
+			_lblConfirmMsg.AddThemeFontSizeOverride("font_size", 11);
+			vBox.AddChild(_lblConfirmMsg);
+
+			HBoxContainer btnRow = new HBoxContainer();
+			btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+			btnRow.AddThemeConstantOverride("separation", 20);
+
+			Button btnCancel = new Button { Text = "CANCEL", CustomMinimumSize = new Vector2(120, 40) };
+			btnCancel.Modulate = new Color("#94A3B8");
+			btnCancel.Pressed += () => _confirmOverlay.Visible = false;
+			btnRow.AddChild(btnCancel);
+
+			Button btnConfirm = new Button { Text = "CONFIRM", CustomMinimumSize = new Vector2(120, 40) };
+			btnConfirm.Modulate = new Color("#22C55E");
+			btnConfirm.Pressed += () => 
+			{
+				_confirmOverlay.Visible = false;
+				_pendingConfirmAction?.Invoke();
+				_pendingConfirmAction = null;
+			};
+			btnRow.AddChild(btnConfirm);
+
+			vBox.AddChild(btnRow);
+		}
+
+		private void ShowConfirmDialog(string title, string message, Action onConfirm)
+		{
+			_lblConfirmTitle.Text = title;
+			_lblConfirmMsg.Text = message;
+			_pendingConfirmAction = onConfirm;
+			_confirmOverlay.Visible = true;
+		}
+
+		public void InspectBuilding(
+			string buildingId,
+			string buildingName,
+			int currentLevel,
+			Color themeColor,
+			string districtCode = "",
+			int slotIndex = 0,
+			int[] districtLevels = null,
+			int industrialCoreLevel = 1,
+			Dictionary<string, int> allBuildingLevels = null)
 		{
 			ActiveBuildingId = buildingId;
 			ActiveBuildingName = buildingName;
 			ActiveBuildingLevel = currentLevel;
 			ActiveBuildingColor = themeColor;
+			ActiveDistrictCode = districtCode;
+			ActiveSlotIndex = slotIndex;
+			ActiveDistrictLevels = districtLevels ?? new int[0];
+			CurrentIndustrialCoreLevel = industrialCoreLevel;
+			AllBuildingLevels = allBuildingLevels ?? new Dictionary<string, int>();
 
 			if (_lblHeaderTitle != null) _lblHeaderTitle.Text = buildingName.ToUpper();
 			if (_lblLevelBadge != null)
@@ -154,7 +280,7 @@ namespace MoonsTotalWar.Engine
 			if (_modalChassis != null)
 			{
 				float chassisW = 520;
-				float chassisH = 540;
+				float chassisH = 600;
 				_modalChassis.Position = new Vector2((vpSize.X - chassisW) * 0.5f, (vpSize.Y - chassisH) * 0.5f);
 				_modalChassis.Size = new Vector2(chassisW, chassisH);
 
@@ -182,37 +308,37 @@ namespace MoonsTotalWar.Engine
 			}
 			_unitQtyInputs.Clear();
 
-			if (buildingId == "hub_mil" || buildingId == "hub_arm")
+			// Calculate Simulated Future State
+			int simActiveLevel = ActiveBuildingLevel;
+			Dictionary<string, int> simLevels = new Dictionary<string, int>(AllBuildingLevels);
+
+			if (BaseHUD.Instance != null)
 			{
-				BuildShipyardArmoryMenu();
+				var fullQueue = new List<GameMath.BuildQueueItem>();
+				if (BaseHUD.Instance.ActiveBuild != null) fullQueue.Add(BaseHUD.Instance.ActiveBuild);
+				fullQueue.AddRange(BaseHUD.Instance.BuildQueue);
+
+				simLevels = GameMath.GetSimulatedLevels(AllBuildingLevels, fullQueue);
+				simActiveLevel = simLevels.GetValueOrDefault(ActiveBuildingId, ActiveBuildingLevel);
 			}
-			else if (buildingId == "hub_silo")
+
+			if (buildingId == "hub_mil" || buildingId == "hub_arm") BuildShipyardArmoryMenu();
+			else if (buildingId == "hub_silo") BuildSiloMenu();
+			else if (buildingId == "hub_ahq") BuildAllianceHQMenu();
+			else if (buildingId.StartsWith("dist_h3_")) BuildHelium3DistilleryMenu();
+			else if (buildingId == "hub_rng") BuildDeepRadarMenu();
+			else if (buildingId == "hub_mgd") BuildGalaxyGoldExchangeMenu();
+			else if (buildingId == "hub_cmd") BuildIndustrialCoreMenu();
+			else if (buildingId.StartsWith("dist_")) BuildStandardSubMineMenu();
+			else BuildGenericFacilityMenu();
+
+			if (buildingId != "hub_mgd" && buildingId != "hub_mil" && buildingId != "hub_arm")
 			{
-				BuildSiloMenu();
+				AddBlueprintUpgradeSection(buildingId.StartsWith("dist_"), 30, simLevels, simActiveLevel);
 			}
-			else if (buildingId == "hub_ahq")
+			else if (buildingId == "hub_mil" || buildingId == "hub_arm")
 			{
-				BuildAllianceHQMenu();
-			}
-			else if (buildingId.StartsWith("dist_h3_"))
-			{
-				BuildHelium3DistilleryMenu();
-			}
-			else if (buildingId == "hub_rng")
-			{
-				BuildDeepRadarMenu();
-			}
-			else if (buildingId == "hub_mgd")
-			{
-				BuildMoongoldObeliskMenu();
-			}
-			else if (buildingId == "hub_cmd")
-			{
-				BuildIndustrialCoreMenu();
-			}
-			else
-			{
-				BuildStandardMineMenu();
+				AddBlueprintUpgradeSection(false, 30, simLevels, simActiveLevel);
 			}
 
 			Visible = true;
@@ -220,10 +346,13 @@ namespace MoonsTotalWar.Engine
 
 		private void BuildSiloMenu()
 		{
-			long currentCap = GameMath.CalcStorageCap(ActiveBuildingLevel);
-			long nextCap = GameMath.CalcStorageCap(ActiveBuildingLevel + 1);
+			long currentCap = GameMath.CalcSiloCapacity(ActiveBuildingLevel);
+			long nextCap = GameMath.CalcSiloCapacity(ActiveBuildingLevel + 1);
+			float vaultProt = GameMath.GetSiloVaultProtection(ActiveBuildingLevel);
+			int hp = GameMath.GetStructureHp(ActiveBuildingLevel);
+			int pop = GameMath.GetStructurePop("silo", ActiveBuildingLevel);
 
-			Panel infoBox = CreateCardPanel(80);
+			Panel infoBox = CreateCardPanel(90);
 			VBoxContainer infoContent = CreateCardContainer(infoBox);
 
 			Label lblTitle = new Label { Text = "PRESSURIZED CONTAINMENT VAULT STATUS:", Modulate = new Color("#00F0FF") };
@@ -231,7 +360,7 @@ namespace MoonsTotalWar.Engine
 
 			Label lblCap = new Label
 			{
-				Text = $"Global Resource Ceiling: {currentCap:N0} Units\nNext Upgrade Ceiling: {nextCap:N0} Units (+{(nextCap - currentCap):N0})",
+				Text = $"Global Capacity: {currentCap:N0} Units (15h Peak Production)\nNext Level: {nextCap:N0} Units (+{(nextCap - currentCap):N0})\nRaid Vault Security: {(vaultProt * 100):F1}% Protected | HP: {hp:N0} | Pop: {pop}",
 				Modulate = Colors.White
 			};
 			lblCap.AddThemeFontSizeOverride("font_size", 10);
@@ -239,12 +368,13 @@ namespace MoonsTotalWar.Engine
 			infoContent.AddChild(lblTitle);
 			infoContent.AddChild(lblCap);
 			_contentStack.AddChild(infoBox);
-
-			AddUpgradeCostSection();
 		}
 
 		private void BuildAllianceHQMenu()
 		{
+			int hp = GameMath.GetStructureHp(ActiveBuildingLevel);
+			int pop = GameMath.GetStructurePop("ahq", ActiveBuildingLevel);
+
 			Panel infoBox = CreateCardPanel(90);
 			VBoxContainer infoContent = CreateCardContainer(infoBox);
 
@@ -253,7 +383,7 @@ namespace MoonsTotalWar.Engine
 
 			Label lblDesc = new Label
 			{
-				Text = $"HQ Level: {ActiveBuildingLevel}\nReinforcement Garrison Capacity: {(ActiveBuildingLevel * 25000):N0} Units\nAlliance Rally Speed Bonus: +{(ActiveBuildingLevel * 2.5f):F1}%",
+				Text = $"HQ Level: {ActiveBuildingLevel} | HP: {hp:N0} | Pop: {pop}\nReinforcement Garrison: {(ActiveBuildingLevel * 25000):N0} Units\nAlliance Rally Speed: +{(ActiveBuildingLevel * 2.5f):F1}%",
 				Modulate = Colors.White
 			};
 			lblDesc.AddThemeFontSizeOverride("font_size", 10);
@@ -269,22 +399,52 @@ namespace MoonsTotalWar.Engine
 			};
 			btnAllianceRally.AddThemeFontSizeOverride("font_size", 10);
 			btnAllianceRally.Modulate = new Color("#38BDF8");
-			btnAllianceRally.Pressed += () =>
-			{
-				GD.Print("[ALLIANCE HQ] Diplomatic Interface Initialized.");
-			};
+			btnAllianceRally.Pressed += () => GD.Print("[ALLIANCE HQ] Diplomatic Interface Initialized.");
 			_contentStack.AddChild(btnAllianceRally);
-
-			AddUpgradeCostSection();
 		}
 
-		private void BuildStandardMineMenu()
+		private void BuildGenericFacilityMenu()
 		{
-			bool isH3 = ActiveBuildingId.Contains("h3");
-			long currentYield = (long)GameMath.CalcOutput(ActiveBuildingLevel, isH3);
-			long nextYield = (long)GameMath.CalcOutput(ActiveBuildingLevel + 1, isH3);
+			int hp = GameMath.GetStructureHp(ActiveBuildingLevel);
+			int pop = GameMath.GetStructurePop(ActiveBuildingId, ActiveBuildingLevel);
 
-			Panel yieldBox = CreateCardPanel(64);
+			Panel infoBox = CreateCardPanel(90);
+			VBoxContainer infoContent = CreateCardContainer(infoBox);
+
+			Label lblTitle = new Label { Text = $"{ActiveBuildingName.ToUpper()} STATUS:", Modulate = ActiveBuildingColor };
+			lblTitle.AddThemeFontSizeOverride("font_size", 9);
+
+			string roleDesc = ActiveBuildingId switch
+			{
+				"hub_com" => "Diplomatic Link Relay. Unlocks alliance founding, treaties, and global division rankings.",
+				"hub_flt" => "Orbital flight operations center. Manages tactical strike group manifests and deployment.",
+				"hub_trd" => "Galactic commerce network. Enables inter-colony supply transfers and alliance trade aid.",
+				"hub_rsh" => "Advanced science division. Unlocks higher-tier warship blueprints and energy technologies.",
+				"hub_shd" => "High-yield deflection generator. Mitigates casualty rates during planetary bombardments.",
+				_ => "Specialized colonial facility."
+			};
+
+			Label lblDesc = new Label
+			{
+				Text = $"{roleDesc}\nStructural Health: {hp:N0} HP | Operational Staff: {pop} Officers",
+				Modulate = Colors.White,
+				AutowrapMode = TextServer.AutowrapMode.WordSmart
+			};
+			lblDesc.AddThemeFontSizeOverride("font_size", 9);
+
+			infoContent.AddChild(lblTitle);
+			infoContent.AddChild(lblDesc);
+			_contentStack.AddChild(infoBox);
+		}
+
+		private void BuildStandardSubMineMenu()
+		{
+			long currentYield = GameMath.CalcSubMineYield(ActiveBuildingLevel);
+			long nextYield = GameMath.CalcSubMineYield(ActiveBuildingLevel + 1);
+			int hp = GameMath.GetStructureHp(ActiveBuildingLevel);
+			int pop = GameMath.GetStructurePop("mine", ActiveBuildingLevel);
+
+			Panel yieldBox = CreateCardPanel(80);
 			VBoxContainer yieldContent = CreateCardContainer(yieldBox);
 
 			Label lblYieldTitle = new Label { Text = "PRODUCTION TELEMETRY OUTPUT:", Modulate = new Color("#94A3B8") };
@@ -294,31 +454,42 @@ namespace MoonsTotalWar.Engine
 			Label lblCurrent = new Label { Text = $"Current: {currentYield:N0}/h", Modulate = Colors.White, SizeFlagsHorizontal = SizeFlags.ExpandFill };
 			lblCurrent.AddThemeFontSizeOverride("font_size", 11);
 
-			Label lblNext = new Label { Text = $"➔ Next Lvl: {nextYield:N0}/h", Modulate = new Color("#22C55E") };
+			Label lblNext = new Label { Text = $"➔ Next: {nextYield:N0}/h", Modulate = new Color("#22C55E") };
 			lblNext.AddThemeFontSizeOverride("font_size", 11);
 
 			yieldValues.AddChild(lblCurrent);
 			yieldValues.AddChild(lblNext);
+
+			Label lblStats = new Label
+			{
+				Text = $"Structural Health: {hp:N0} HP | Population Employed: {pop} Engineers",
+				Modulate = new Color("#94A3B8")
+			};
+			lblStats.AddThemeFontSizeOverride("font_size", 9);
+
 			yieldContent.AddChild(lblYieldTitle);
 			yieldContent.AddChild(yieldValues);
+			yieldContent.AddChild(lblStats);
 			_contentStack.AddChild(yieldBox);
 
-			AddUpgradeCostSection();
+			BuildBoostSection(ActiveDistrictCode);
 		}
 
 		private void BuildIndustrialCoreMenu()
 		{
 			double wallMitigation = GameMath.GetWallMitigation(ActiveBuildingLevel);
+			int hp = GameMath.GetStructureHp(ActiveBuildingLevel);
+			int pop = GameMath.GetStructurePop("cmd", ActiveBuildingLevel);
 
-			Panel infoBox = CreateCardPanel(75);
+			Panel infoBox = CreateCardPanel(95);
 			VBoxContainer infoContent = CreateCardContainer(infoBox);
 
-			Label lblTitle = new Label { Text = "CENTRAL COMMAND SPIRE & PERIMETER DEFENSE:", Modulate = new Color("#FFFFFF") };
+			Label lblTitle = new Label { Text = "INDUSTRIAL CORE MASTER SPIRE:", Modulate = new Color("#FFFFFF") };
 			lblTitle.AddThemeFontSizeOverride("font_size", 9);
 
 			Label lblSpire = new Label
 			{
-				Text = $"Command Spire Level: {ActiveBuildingLevel}\nMaximum Sector Building Tech Ceiling: Lvl {ActiveBuildingLevel * 5}\nPerimeter Deflection Mitigation: {(wallMitigation * 100):F1}% Defense",
+				Text = $"Core Level: {ActiveBuildingLevel} / 20 | HP: {hp:N0} | Pop: {pop}\nPerimeter Deflection Mitigation: {(wallMitigation * 100):F1}%\nMaster Gatekeeper: Reaching Lvl 20 unlocks Sub-Building Mastery (Lvl 50) & Colony Ships.",
 				Modulate = new Color("#CBD5E1")
 			};
 			lblSpire.AddThemeFontSizeOverride("font_size", 10);
@@ -326,34 +497,122 @@ namespace MoonsTotalWar.Engine
 			infoContent.AddChild(lblTitle);
 			infoContent.AddChild(lblSpire);
 			_contentStack.AddChild(infoBox);
-
-			AddUpgradeCostSection();
 		}
 
 		private void BuildHelium3DistilleryMenu()
 		{
-			long currentYield = (long)GameMath.CalcOutput(ActiveBuildingLevel, true);
-			long nextYield = (long)GameMath.CalcOutput(ActiveBuildingLevel + 1, true);
+			long currentYield = GameMath.CalcSubMineYield(ActiveBuildingLevel);
+			long nextYield = GameMath.CalcSubMineYield(ActiveBuildingLevel + 1);
+			int hp = GameMath.GetStructureHp(ActiveBuildingLevel);
+			int pop = GameMath.GetStructurePop("h3", ActiveBuildingLevel);
 
-			Panel monitorBox = CreateCardPanel(75);
+			Panel monitorBox = CreateCardPanel(90);
 			VBoxContainer monitorContent = CreateCardContainer(monitorBox);
 
 			Label lblTitle = new Label { Text = "HELIUM-3 FUEL EXTRACTION MONITOR:", Modulate = new Color("#EAB308") };
 			lblTitle.AddThemeFontSizeOverride("font_size", 9);
 
 			HBoxContainer row1 = new HBoxContainer();
-			Label lblRateTitle = new Label { Text = "Extractor Output:", Modulate = new Color("#94A3B8"), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			Label lblRateTitle = new Label { Text = "Distillery Output:", Modulate = new Color("#94A3B8"), SizeFlagsHorizontal = SizeFlags.ExpandFill };
 			Label lblRateVal = new Label { Text = $"+{currentYield:N0}/h ➔ +{nextYield:N0}/h", Modulate = new Color("#22C55E") };
 			lblRateTitle.AddThemeFontSizeOverride("font_size", 10);
 			lblRateVal.AddThemeFontSizeOverride("font_size", 10);
 			row1.AddChild(lblRateTitle);
 			row1.AddChild(lblRateVal);
 
+			Label lblStarveNotice = new Label
+			{
+				Text = "Note: If H3 reserves reach 0, fleet attrition will trigger.",
+				Modulate = new Color("#F59E0B")
+			};
+			lblStarveNotice.AddThemeFontSizeOverride("font_size", 8);
+
 			monitorContent.AddChild(lblTitle);
 			monitorContent.AddChild(row1);
+			monitorContent.AddChild(lblStarveNotice);
 			_contentStack.AddChild(monitorBox);
 
-			AddUpgradeCostSection();
+			BuildBoostSection("H3");
+		}
+
+		private void BuildBoostSection(string resCode)
+		{
+			Panel boostBox = CreateCardPanel(110);
+			VBoxContainer boostContent = CreateCardContainer(boostBox);
+
+			Label lblTitle = new Label { Text = $"PREMIUM PRODUCTION BOOSTS ({resCode}):", Modulate = new Color("#FBBF24") };
+			lblTitle.AddThemeFontSizeOverride("font_size", 9);
+			boostContent.AddChild(lblTitle);
+
+			if (BaseHUD.Instance != null && BaseHUD.Instance.ActiveBoosts.TryGetValue(resCode, out var activeBoost))
+			{
+				if (activeBoost.Expiration > DateTimeOffset.UtcNow)
+				{
+					TimeSpan remaining = activeBoost.Expiration - DateTimeOffset.UtcNow;
+					Label lblActive = new Label 
+					{ 
+						Text = $"ACTIVE: +{((activeBoost.Multiplier - 1.0f) * 100):F0}% BOOST\nEXPIRES IN: {remaining.Days}d {remaining.Hours}h {remaining.Minutes}m", 
+						Modulate = new Color("#22C55E") 
+					};
+					lblActive.AddThemeFontSizeOverride("font_size", 9);
+					boostContent.AddChild(lblActive);
+				}
+			}
+
+			HBoxContainer btnRow1 = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			btnRow1.AddThemeConstantOverride("separation", 10);
+
+			Button btnBoost1 = new Button { Text = "+30% (7 DAYS)\n250 GGOLD", CustomMinimumSize = new Vector2(140, 36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			btnBoost1.AddThemeFontSizeOverride("font_size", 8);
+			btnBoost1.Modulate = new Color("#FBBF24");
+			btnBoost1.Pressed += () => OnBuyBoostPressed(resCode, 1.30f, 7, 250);
+			btnRow1.AddChild(btnBoost1);
+
+			Button btnBoost2 = new Button { Text = "+75% (7 DAYS)\n500 GGOLD", CustomMinimumSize = new Vector2(140, 36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			btnBoost2.AddThemeFontSizeOverride("font_size", 8);
+			btnBoost2.Modulate = new Color("#FBBF24");
+			btnBoost2.Pressed += () => OnBuyBoostPressed(resCode, 1.75f, 7, 500);
+			btnRow1.AddChild(btnBoost2);
+
+			boostContent.AddChild(btnRow1);
+
+			Button btnBoost3 = new Button { Text = "+70% (30 DAYS) - 2150 GGOLD", CustomMinimumSize = new Vector2(0, 32) };
+			btnBoost3.AddThemeFontSizeOverride("font_size", 9);
+			btnBoost3.Modulate = new Color("#FBBF24");
+			btnBoost3.Pressed += () => OnBuyBoostPressed(resCode, 1.70f, 30, 2150);
+			boostContent.AddChild(btnBoost3);
+
+			_contentStack.AddChild(boostBox);
+		}
+
+		private void OnBuyBoostPressed(string resCode, float multiplier, int days, long cost)
+		{
+			if (BaseHUD.Instance == null) return;
+
+			if (BaseHUD.Instance.GGold >= cost)
+			{
+				ShowConfirmDialog(
+					"AUTHORIZE BOOST PURCHASE?",
+					$"This will consume {cost} Galaxy Gold to apply a +{((multiplier - 1.0f) * 100):F0}% production boost to {resCode} for {days} days.",
+					() => 
+					{
+						BaseHUD.Instance.GGold -= cost;
+						BaseHUD.Instance.ActiveBoosts[resCode] = new GameMath.BoostData
+						{
+							Multiplier = multiplier,
+							Expiration = DateTimeOffset.UtcNow.AddDays(days)
+						};
+						BaseHUD.Instance.UpdateHUDDisplay();
+						BaseHUD.Instance.TriggerInstantSave();
+						RefreshInspector();
+						GD.Print($"[BOOST] Purchased {multiplier}x boost for {resCode} for {days} days.");
+					}
+				);
+			}
+			else
+			{
+				GD.PrintErr("[INSPECTOR] Insufficient GGold for boost.");
+			}
 		}
 
 		private void BuildDeepRadarMenu()
@@ -405,8 +664,6 @@ namespace MoonsTotalWar.Engine
 			radarContent.AddChild(lblDesc);
 			radarContent.AddChild(jumpRow);
 			_contentStack.AddChild(radarBox);
-
-			AddUpgradeCostSection();
 		}
 
 		private void BuildShipyardArmoryMenu()
@@ -507,14 +764,13 @@ namespace MoonsTotalWar.Engine
 			}
 
 			_contentStack.AddChild(new HSeparator());
-			AddUpgradeCostSection();
 		}
 
-		private void BuildMoongoldObeliskMenu()
+		private void BuildGalaxyGoldExchangeMenu()
 		{
 			Label lblHeader = new Label
 			{
-				Text = "MOONGOLD CREDIT BUNDLE EXCHANGE:",
+				Text = "GALAXY GOLD CREDIT BUNDLE EXCHANGE:",
 				Modulate = new Color("#FBBF24")
 			};
 			lblHeader.AddThemeFontSizeOverride("font_size", 10);
@@ -540,7 +796,7 @@ namespace MoonsTotalWar.Engine
 
 				Label lblName = new Label
 				{
-					Text = $"{pack.Name}\n💰 {pack.Gold:N0} MGOLD",
+					Text = $"{pack.Name}\n💰 {pack.Gold:N0} GGOLD",
 					Modulate = new Color("#FBBF24"),
 					SizeFlagsHorizontal = SizeFlags.ExpandFill
 				};
@@ -558,9 +814,10 @@ namespace MoonsTotalWar.Engine
 				{
 					if (BaseHUD.Instance != null)
 					{
-						BaseHUD.Instance.MGold += gAmount;
+						BaseHUD.Instance.GGold += gAmount;
 						BaseHUD.Instance.UpdateHUDDisplay();
-						GD.Print($"[EXCHANGE] Added {gAmount} MGold to treasury!");
+						BaseHUD.Instance.TriggerInstantSave();
+						GD.Print($"[EXCHANGE] Added {gAmount} GGold to treasury!");
 					}
 				};
 
@@ -569,18 +826,167 @@ namespace MoonsTotalWar.Engine
 				packCard.AddChild(row);
 				_contentStack.AddChild(packCard);
 			}
+
+			_contentStack.AddChild(new HSeparator());
+			BuildGlobalBoostSection();
 		}
 
-		private void AddUpgradeCostSection()
+		private void BuildGlobalBoostSection()
 		{
-			Label lblReqHeader = new Label { Text = "REQUIRED UPGRADE RESOURCES:", Modulate = new Color("#94A3B8") };
+			Panel boostBox = CreateCardPanel(110);
+			VBoxContainer boostContent = CreateCardContainer(boostBox);
+
+			Label lblTitle = new Label { Text = "GLOBAL EMPIRE BOOSTS (ALL RESOURCES):", Modulate = new Color("#FBBF24") };
+			lblTitle.AddThemeFontSizeOverride("font_size", 9);
+			boostContent.AddChild(lblTitle);
+
+			HBoxContainer btnRow1 = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			btnRow1.AddThemeConstantOverride("separation", 10);
+
+			Button btnBoost1 = new Button { Text = "+30% (7 DAYS)\n1000 GGOLD", CustomMinimumSize = new Vector2(140, 36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			btnBoost1.AddThemeFontSizeOverride("font_size", 8);
+			btnBoost1.Modulate = new Color("#FBBF24");
+			btnBoost1.Pressed += () => OnBuyGlobalBoostPressed(1.30f, 7, 1000);
+			btnRow1.AddChild(btnBoost1);
+
+			Button btnBoost2 = new Button { Text = "+75% (7 DAYS)\n2000 GGOLD", CustomMinimumSize = new Vector2(140, 36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			btnBoost2.AddThemeFontSizeOverride("font_size", 8);
+			btnBoost2.Modulate = new Color("#FBBF24");
+			btnBoost2.Pressed += () => OnBuyGlobalBoostPressed(1.75f, 7, 2000);
+			btnRow1.AddChild(btnBoost2);
+
+			boostContent.AddChild(btnRow1);
+
+			Button btnBoost3 = new Button { Text = "+70% (30 DAYS) - 8600 GGOLD", CustomMinimumSize = new Vector2(0, 32) };
+			btnBoost3.AddThemeFontSizeOverride("font_size", 9);
+			btnBoost3.Modulate = new Color("#FBBF24");
+			btnBoost3.Pressed += () => OnBuyGlobalBoostPressed(1.70f, 30, 8600);
+			boostContent.AddChild(btnBoost3);
+
+			_contentStack.AddChild(boostBox);
+		}
+
+		private void OnBuyGlobalBoostPressed(float multiplier, int days, long cost)
+		{
+			if (BaseHUD.Instance == null) return;
+
+			if (BaseHUD.Instance.GGold >= cost)
+			{
+				ShowConfirmDialog(
+					"AUTHORIZE GLOBAL BOOST?",
+					$"This will consume {cost} Galaxy Gold to apply a +{((multiplier - 1.0f) * 100):F0}% production boost to ALL resources (E, I, T, H3) for {days} days.",
+					() => 
+					{
+						BaseHUD.Instance.GGold -= cost;
+						var exp = DateTimeOffset.UtcNow.AddDays(days);
+						
+						BaseHUD.Instance.ActiveBoosts["E"] = new GameMath.BoostData { Multiplier = multiplier, Expiration = exp };
+						BaseHUD.Instance.ActiveBoosts["I"] = new GameMath.BoostData { Multiplier = multiplier, Expiration = exp };
+						BaseHUD.Instance.ActiveBoosts["T"] = new GameMath.BoostData { Multiplier = multiplier, Expiration = exp };
+						BaseHUD.Instance.ActiveBoosts["H3"] = new GameMath.BoostData { Multiplier = multiplier, Expiration = exp };
+						
+						BaseHUD.Instance.UpdateHUDDisplay();
+						BaseHUD.Instance.TriggerInstantSave();
+						RefreshInspector();
+						GD.Print($"[BOOST] Purchased GLOBAL {multiplier}x boost for {days} days.");
+					}
+				);
+			}
+			else
+			{
+				GD.PrintErr("[INSPECTOR] Insufficient GGold for global boost.");
+			}
+		}
+
+		private void AddBlueprintUpgradeSection(bool isSubMine, int maxLvl, Dictionary<string, int> simLevels, int simActiveLevel)
+		{
+			int targetLevel = simActiveLevel + 1;
+
+			if (simActiveLevel >= maxLvl)
+			{
+				Label lblMax = new Label
+				{
+					Text = $"FACILITY AT MAXIMUM UPGRADE LEVEL ({maxLvl})",
+					Modulate = new Color("#22C55E"),
+					HorizontalAlignment = HorizontalAlignment.Center
+				};
+				lblMax.AddThemeFontSizeOverride("font_size", 11);
+				_contentStack.AddChild(lblMax);
+				return;
+			}
+
+			// 1. Generate Universal Construction Matrix
+			var prereqs = GameMath.GetFacilityRequirements(ActiveBuildingId, targetLevel, ActiveDistrictCode, ActiveSlotIndex, simLevels);
+			bool allReqsMet = true;
+
+			if (prereqs.Count > 0)
+			{
+				foreach (var r in prereqs) if (!r.IsMet) allReqsMet = false;
+
+				Panel prereqBox = CreateCardPanel(30 + prereqs.Count * 22);
+				VBoxContainer prereqContent = CreateCardContainer(prereqBox);
+
+				Label lblPrereqTitle = new Label
+				{
+					Text = $"CONSTRUCTION MATRIX (LVL {targetLevel} REQUIREMENTS):",
+					Modulate = allReqsMet ? new Color("#22C55E") : new Color("#EF4444")
+				};
+				lblPrereqTitle.AddThemeFontSizeOverride("font_size", 9);
+				prereqContent.AddChild(lblPrereqTitle);
+
+				foreach (var req in prereqs)
+				{
+					HBoxContainer row = new HBoxContainer();
+					Label lblStatus = new Label
+					{
+						Text = req.IsMet ? $"✓ {req.BuildingName} Lvl {req.RequiredLevel} [LVL {req.CurrentLevel}]" : $"🔒 {req.BuildingName} Lvl {req.RequiredLevel} [LVL {req.CurrentLevel}]",
+						Modulate = req.IsMet ? new Color("#22C55E") : new Color("#EF4444"),
+						SizeFlagsHorizontal = SizeFlags.ExpandFill
+					};
+					lblStatus.AddThemeFontSizeOverride("font_size", 9);
+					row.AddChild(lblStatus);
+					prereqContent.AddChild(row);
+				}
+				_contentStack.AddChild(prereqBox);
+			}
+
+			// 2. Evaluate Core Cap Lock
+			int simCoreLevel = simLevels.GetValueOrDefault("hub_cmd", CurrentIndustrialCoreLevel);
+			bool isCoreCapLocked = ActiveBuildingId != "hub_cmd" && simActiveLevel >= GameMath.GetMaxAllowedSubBuildingLevel(simCoreLevel);
+
+			// 3. Final Lock State
+			bool isLocked = isCoreCapLocked || !allReqsMet;
+			bool isAlreadyQueued = simActiveLevel > ActiveBuildingLevel;
+			bool isEngineBusy = BaseHUD.Instance != null && BaseHUD.Instance.ActiveBuild != null;
+			bool isQueueFull = BaseHUD.Instance != null && BaseHUD.Instance.BuildQueue.Count >= 20;
+
+			Label lblReqHeader = new Label { Text = $"REQUIRED RESOURCES FOR LEVEL {targetLevel}:", Modulate = new Color("#94A3B8") };
 			lblReqHeader.AddThemeFontSizeOverride("font_size", 9);
 			_contentStack.AddChild(lblReqHeader);
 
-			bool isHub = ActiveBuildingId.StartsWith("hub_");
-			var cost = isHub
-				? GameMath.CalcHubCost(ActiveBuildingLevel, 1000, 1000, 500, 0)
-				: GameMath.CalcCost(ActiveBuildingLevel, 850, 150, 120, 0);
+			(long e, long i, long t, long h) cost;
+			int durationSec;
+
+			if (isSubMine)
+			{
+				cost = GameMath.CalcSubMineUpgradeCost(ActiveDistrictCode, simActiveLevel);
+				durationSec = GameMath.GetSubMineBuildTimeSec(simActiveLevel);
+			}
+			else if (ActiveBuildingId == "hub_cmd")
+			{
+				cost = GameMath.CalcIndustrialCoreCost(simActiveLevel);
+				durationSec = GameMath.GetIndustrialCoreBuildTimeSec(simActiveLevel);
+			}
+			else if (ActiveBuildingId == "hub_silo")
+			{
+				cost = GameMath.CalcStorageSiloCost(simActiveLevel);
+				durationSec = GameMath.GetStorageSiloBuildTimeSec(simActiveLevel);
+			}
+			else
+			{
+				cost = GameMath.CalcCost(simActiveLevel, 850, 150, 120, 0);
+				durationSec = 120;
+			}
 
 			GridContainer reqGrid = new GridContainer();
 			reqGrid.Columns = 2;
@@ -603,34 +1009,214 @@ namespace MoonsTotalWar.Engine
 			reqGrid.AddChild(lblCostH3);
 			_contentStack.AddChild(reqGrid);
 
-			Button btnUpgrade = new Button
+			HBoxContainer timeRow = new HBoxContainer();
+			Label lblDuration = new Label
 			{
-				Text = $"UPGRADE TO LEVEL {ActiveBuildingLevel + 1}",
-				CustomMinimumSize = new Vector2(0, 42)
+				Text = $"⏱️ Construction Duration: {GameMath.FormatTime(durationSec)}",
+				Modulate = new Color("#FBBF24"),
+				SizeFlagsHorizontal = SizeFlags.ExpandFill
 			};
-			btnUpgrade.AddThemeFontSizeOverride("font_size", 11);
-			btnUpgrade.Pressed += OnUpgradePressed;
+			lblDuration.AddThemeFontSizeOverride("font_size", 9);
+			timeRow.AddChild(lblDuration);
+			_contentStack.AddChild(timeRow);
 
-			StyleBoxFlat btnStyle = new StyleBoxFlat
+			// 1. START UPGRADE BUTTON (FREE)
+			string startText = isEngineBusy ? "ENGINEERING DOCK BUSY" : (isLocked ? "REQUIREMENTS UNMET" : $"START UPGRADE TO LVL {targetLevel}");
+			Button btnStart = new Button
 			{
-				BgColor = new Color(0.13f, 0.77f, 0.36f, 0.85f),
+				Text = startText,
+				CustomMinimumSize = new Vector2(0, 42),
+				Disabled = isLocked || isAlreadyQueued || isEngineBusy
+			};
+			btnStart.AddThemeFontSizeOverride("font_size", 11);
+			btnStart.Pressed += () => OnStartUpgradePressed(targetLevel, durationSec, cost);
+			ApplyButtonStyle(btnStart, btnStart.Disabled, new Color(0.13f, 0.77f, 0.36f, 0.85f));
+			_contentStack.AddChild(btnStart);
+
+			// 2. QUEUE UPGRADE BUTTON (25 GGOLD)
+			string queueText;
+			if (!isEngineBusy) queueText = "DOCK IDLE (USE START)";
+			else if (isQueueFull) queueText = "QUEUE FULL (MAX 20)";
+			else if (isLocked) queueText = "REQUIREMENTS UNMET";
+			else queueText = $"QUEUE LVL {targetLevel} (25 GGOLD)";
+
+			Button btnQueue = new Button
+			{
+				Text = queueText,
+				CustomMinimumSize = new Vector2(0, 36),
+				Disabled = isLocked || isQueueFull || !isEngineBusy
+			};
+			btnQueue.AddThemeFontSizeOverride("font_size", 10);
+			btnQueue.Pressed += () => OnQueueUpgradePressed(targetLevel, durationSec, cost);
+			ApplyButtonStyle(btnQueue, btnQueue.Disabled, new Color(0.14f, 0.5f, 0.9f, 0.85f));
+			_contentStack.AddChild(btnQueue);
+
+			// 3. INSTANT ASSEMBLY BUTTON (50 GGOLD)
+			string instantText = isAlreadyQueued ? "BUILDING IN QUEUE" : (isLocked ? "REQUIREMENTS UNMET" : "⚡ INSTANT ASSEMBLY (50 GGOLD)");
+			Button btnInstant = new Button
+			{
+				Text = instantText,
+				CustomMinimumSize = new Vector2(0, 36),
+				Disabled = isLocked || isAlreadyQueued
+			};
+			btnInstant.AddThemeFontSizeOverride("font_size", 10);
+			btnInstant.Modulate = btnInstant.Disabled ? new Color(0.5f, 0.5f, 0.5f, 0.5f) : new Color("#FBBF24");
+			btnInstant.Pressed += () => OnInstantAssemblyPressed(targetLevel, cost);
+			_contentStack.AddChild(btnInstant);
+		}
+
+		private void ApplyButtonStyle(Button btn, bool isDisabled, Color activeColor)
+		{
+			StyleBoxFlat style = new StyleBoxFlat
+			{
+				BgColor = isDisabled ? new Color(0.18f, 0.22f, 0.28f, 0.7f) : activeColor,
 				CornerRadiusTopLeft = 6,
 				CornerRadiusTopRight = 6,
 				CornerRadiusBottomLeft = 6,
-				CornerRadiusBottomRight = 6
+				CornerRadiusBottomRight = 6,
+				BorderWidthLeft = isDisabled ? 1 : 0,
+				BorderWidthRight = isDisabled ? 1 : 0,
+				BorderWidthTop = isDisabled ? 1 : 0,
+				BorderWidthBottom = isDisabled ? 1 : 0,
+				BorderColor = new Color(0.4f, 0.5f, 0.6f, 0.4f)
 			};
-			btnUpgrade.AddThemeStyleboxOverride("normal", btnStyle);
-			_contentStack.AddChild(btnUpgrade);
+			btn.AddThemeStyleboxOverride("normal", style);
+			btn.AddThemeStyleboxOverride("disabled", style);
+		}
 
-			Button btnSpeedup = new Button
+		private void OnStartUpgradePressed(int targetLevel, int durationSec, (long e, long i, long t, long h) cost)
+		{
+			if (BaseHUD.Instance == null) return;
+
+			if (BaseHUD.Instance.ResE >= cost.e && BaseHUD.Instance.ResI >= cost.i && BaseHUD.Instance.ResT >= cost.t && BaseHUD.Instance.ResH3 >= cost.h)
 			{
-				Text = "⚡ INSTANT ASSEMBLY (50 MGOLD)",
-				CustomMinimumSize = new Vector2(0, 36)
-			};
-			btnSpeedup.AddThemeFontSizeOverride("font_size", 10);
-			btnSpeedup.Modulate = new Color("#FBBF24");
-			btnSpeedup.Pressed += OnSpeedupPressed;
-			_contentStack.AddChild(btnSpeedup);
+				BaseHUD.Instance.ResE -= cost.e;
+				BaseHUD.Instance.ResI -= cost.i;
+				BaseHUD.Instance.ResT -= cost.t;
+				BaseHUD.Instance.ResH3 -= cost.h;
+
+				var item = new GameMath.BuildQueueItem
+				{
+					BuildingId = ActiveBuildingId,
+					BuildingName = ActiveBuildingName,
+					TargetLevel = targetLevel,
+					DurationLeft = durationSec,
+					CostE = cost.e,
+					CostI = cost.i,
+					CostT = cost.t,
+					CostH3 = cost.h
+				};
+
+				BaseHUD.Instance.ActiveBuild = item;
+				BaseHUD.Instance.UpdateHUDDisplay();
+				BaseHUD.Instance.UpdateEngineeringDockUI();
+				BaseHUD.Instance.TriggerInstantSave();
+
+				RefreshInspector();
+			}
+			else
+			{
+				GD.PrintErr("[INSPECTOR] Insufficient resources to start upgrade.");
+			}
+		}
+
+		private void OnQueueUpgradePressed(int targetLevel, int durationSec, (long e, long i, long t, long h) cost)
+		{
+			if (BaseHUD.Instance == null) return;
+
+			if (BaseHUD.Instance.GGold >= 25 && BaseHUD.Instance.ResE >= cost.e && BaseHUD.Instance.ResI >= cost.i && BaseHUD.Instance.ResT >= cost.t && BaseHUD.Instance.ResH3 >= cost.h)
+			{
+				ShowConfirmDialog(
+					"AUTHORIZE QUEUE UPGRADE?",
+					$"This will consume 25 Galaxy Gold to add {ActiveBuildingName} Lvl {targetLevel} to the Engineering Dock queue.",
+					() => 
+					{
+						BaseHUD.Instance.GGold -= 25;
+						BaseHUD.Instance.ResE -= cost.e;
+						BaseHUD.Instance.ResI -= cost.i;
+						BaseHUD.Instance.ResT -= cost.t;
+						BaseHUD.Instance.ResH3 -= cost.h;
+
+						var item = new GameMath.BuildQueueItem
+						{
+							BuildingId = ActiveBuildingId,
+							BuildingName = ActiveBuildingName,
+							TargetLevel = targetLevel,
+							DurationLeft = durationSec,
+							CostE = cost.e,
+							CostI = cost.i,
+							CostT = cost.t,
+							CostH3 = cost.h
+						};
+
+						BaseHUD.Instance.BuildQueue.Add(item);
+						BaseHUD.Instance.UpdateHUDDisplay();
+						BaseHUD.Instance.UpdateEngineeringDockUI();
+						BaseHUD.Instance.TriggerInstantSave();
+
+						RefreshInspector();
+					}
+				);
+			}
+			else
+			{
+				GD.PrintErr("[INSPECTOR] Insufficient resources or GGold to queue upgrade.");
+			}
+		}
+
+		private void OnInstantAssemblyPressed(int targetLevel, (long e, long i, long t, long h) cost)
+		{
+			if (BaseHUD.Instance == null) return;
+
+			if (BaseHUD.Instance.GGold >= 50 && BaseHUD.Instance.ResE >= cost.e && BaseHUD.Instance.ResI >= cost.i && BaseHUD.Instance.ResT >= cost.t && BaseHUD.Instance.ResH3 >= cost.h)
+			{
+				ShowConfirmDialog(
+					"AUTHORIZE INSTANT ASSEMBLY?",
+					$"This will consume 50 Galaxy Gold to instantly build {ActiveBuildingName} Lvl {targetLevel}.",
+					() => 
+					{
+						BaseHUD.Instance.GGold -= 50;
+						BaseHUD.Instance.ResE -= cost.e;
+						BaseHUD.Instance.ResI -= cost.i;
+						BaseHUD.Instance.ResT -= cost.t;
+						BaseHUD.Instance.ResH3 -= cost.h;
+
+						if (ActiveBuildingId == "hub_silo")
+						{
+							BaseHUD.Instance.StorageSiloLevel = targetLevel;
+							BaseHUD.Instance.RecalculateSiloCap();
+						}
+
+						if (AllBuildingLevels != null) AllBuildingLevels[ActiveBuildingId] = targetLevel;
+						BaseHUD.Instance.BuildingLevels[ActiveBuildingId] = targetLevel;
+
+						BaseHUD.Instance.UpdateHUDDisplay();
+						BaseHUD.Instance.TriggerInstantSave();
+
+						EmitSignal(SignalName.BuildingUpgraded, ActiveBuildingId, targetLevel);
+						RefreshInspector();
+					}
+				);
+			}
+			else
+			{
+				GD.PrintErr("[INSPECTOR] Insufficient resources or GGold for instant assembly.");
+			}
+		}
+
+		private void RefreshInspector()
+		{
+			InspectBuilding(
+				ActiveBuildingId,
+				ActiveBuildingName,
+				ActiveBuildingLevel,
+				ActiveBuildingColor,
+				ActiveDistrictCode,
+				ActiveSlotIndex,
+				ActiveDistrictLevels,
+				CurrentIndustrialCoreLevel,
+				AllBuildingLevels
+			);
 		}
 
 		private Panel CreateCardPanel(float height)
@@ -688,46 +1274,6 @@ namespace MoonsTotalWar.Engine
 						GD.Print($"[SHIPYARD] Assembled {qty}x {unit.Name}!");
 					}
 				}
-			}
-		}
-
-		private void OnUpgradePressed()
-		{
-			if (BaseHUD.Instance != null)
-			{
-				bool isHub = ActiveBuildingId.StartsWith("hub_");
-				var cost = isHub
-					? GameMath.CalcHubCost(ActiveBuildingLevel, 1000, 1000, 500, 0)
-					: GameMath.CalcCost(ActiveBuildingLevel, 850, 150, 120, 0);
-
-				if (BaseHUD.Instance.ResE >= cost.e &&
-					BaseHUD.Instance.ResI >= cost.i &&
-					BaseHUD.Instance.ResT >= cost.t &&
-					BaseHUD.Instance.ResH3 >= cost.h)
-				{
-					BaseHUD.Instance.ResE -= cost.e;
-					BaseHUD.Instance.ResI -= cost.i;
-					BaseHUD.Instance.ResT -= cost.t;
-					BaseHUD.Instance.ResH3 -= cost.h;
-					BaseHUD.Instance.UpdateHUDDisplay();
-
-					int newLevel = ActiveBuildingLevel + 1;
-					EmitSignal(SignalName.BuildingUpgraded, ActiveBuildingId, newLevel);
-					InspectBuilding(ActiveBuildingId, ActiveBuildingName, newLevel, ActiveBuildingColor);
-				}
-			}
-		}
-
-		private void OnSpeedupPressed()
-		{
-			if (BaseHUD.Instance != null && BaseHUD.Instance.MGold >= 50)
-			{
-				BaseHUD.Instance.MGold -= 50;
-				BaseHUD.Instance.UpdateHUDDisplay();
-
-				int newLevel = ActiveBuildingLevel + 1;
-				EmitSignal(SignalName.BuildingUpgraded, ActiveBuildingId, newLevel);
-				InspectBuilding(ActiveBuildingId, ActiveBuildingName, newLevel, ActiveBuildingColor);
 			}
 		}
 

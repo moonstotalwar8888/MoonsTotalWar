@@ -1,14 +1,17 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: CLASH OF KINGS COMMAND COCKPIT HUD (v8.0 Base Layout Edition)
+	/// MOONS TOTAL WAR: CLASH OF KINGS COMMAND COCKPIT HUD (v18.0 Live Boost Edition)
 	/// - Top Bar: Commander Profile, Colony Transporter, 5 Resource Capsules, Rank Trophy.
-	/// - Edit Base Layout Toggle: [🏗️ EDIT BASE] / [💾 SAVE LAYOUT] controls.
-	/// - Side Docks: Engineering Construction Monitor, Fleet Operations Radar.
-	/// - Bottom Bar: Command Navigation Dock (Base, Moon Slots, Galaxy Map, Alliance, Comms).
+	/// - Bottom Bar: Command Navigation Dock.
+	/// - Engineering Dock: Active Build Timer, Queue Dropdown, LIFO Cancellation Engine.
+	/// - Cloud Sync: Fetches Supabase state on load, runs ChronoEngine offline catchup.
+	/// - Boost Engine: Applies live multipliers to 1-second ticks and auto-cleans expired boosts.
+	/// - Persistence: 60-second auto-saves and Instant Save triggers.
 	/// </summary>
 	public partial class BaseHUD : Control
 	{
@@ -23,6 +26,8 @@ namespace MoonsTotalWar.Engine
 		[Signal] public delegate void NavTierSelectedEventHandler(string tierName);
 		[Signal] public delegate void EditModeToggledEventHandler(bool isEditing);
 		[Signal] public delegate void SaveLayoutRequestedEventHandler();
+		[Signal] public delegate void ColonyDataLoadedEventHandler(); 
+		[Signal] public delegate void QueuedBuildingCompletedEventHandler(string buildingId, int newLevel);
 
 		// Colony Data
 		public string CommanderName = "COMMANDER ALPHA";
@@ -30,35 +35,51 @@ namespace MoonsTotalWar.Engine
 		public int CurrentMoon = 100;
 		public int CurrentBaseSlot = 1;
 
-		public double ResE = 50000;
-		public double ResI = 50000;
-		public double ResT = 50000;
-		public double ResH3 = 25000;
-		public long MGold = 100;
-		public long SiloCap = 50000;
+		// Live Resource Balances
+		public double ResE = 5000;
+		public double ResI = 5000;
+		public double ResT = 5000;
+		public double ResH3 = 2500;
+		public long GGold = 100; 
+
+		public int StorageSiloLevel = 1;
+		public long SiloCap = 7500;
 		public float ServerSpeed = 1.0f;
 
-		// Side Docks Data
-		public string ActiveBuildName = "Industrial Core Lvl 2";
-		public double ActiveBuildTimeRemaining = 145.0;
-		public int QueuedBuildCount = 2;
-		public int ActiveFleetCount = 1;
-		public string ActiveFleetTarget = "M-100:B-04";
-		public double ActiveFleetEta = 320.0;
+		// Master Dictionaries (Synced with Cloud)
+		public Dictionary<string, int> BuildingLevels = new Dictionary<string, int>();
+		public Dictionary<string, GameMath.BoostData> ActiveBoosts = new Dictionary<string, GameMath.BoostData>();
 
-		// Edit Mode State
+		// Premium Build Queue System
+		public GameMath.BuildQueueItem ActiveBuild = null;
+		public List<GameMath.BuildQueueItem> BuildQueue = new List<GameMath.BuildQueueItem>();
+
+		// Fleet Data
+		public int ActiveFleetCount = 0;
+		public string ActiveFleetTarget = "NONE";
+		public double ActiveFleetEta = 0.0;
+
+		// State Flags
 		public bool IsEditModeActive { get; private set; } = false;
+		private bool _isDataLoaded = false;
+		private bool _isQueueDropdownOpen = false;
+
+		// Timers
+		private double _heartbeatTimer = 0.0;
+		private double _autoSaveTimer = 0.0;
 
 		// UI Node References
 		private Panel _bottomPanelNode;
 		private Label _lblCmdName;
 		private Button _btnColonySwitch;
-		private Label _lblValE, _lblValI, _lblValT, _lblValH3, _lblValMGold;
-		private Label _lblBuildName, _lblBuildTimer, _lblQueuedCount;
+		private Label _lblValE, _lblValI, _lblValT, _lblValH3, _lblValGGold;
+		private Label _lblBuildName, _lblBuildTimer;
+		private Button _btnQueueToggle;
+		private Panel _queueDropdownPanel;
+		private VBoxContainer _queueListContainer;
+		private Button _btnCancelLast;
 		private Label _lblFleetStatus, _lblFleetEta;
 		private Button _btnEditLayoutToggle;
-
-		private double _heartbeatTimer = 0.0;
 
 		public override void _Ready()
 		{
@@ -73,17 +94,104 @@ namespace MoonsTotalWar.Engine
 			BuildTacticalSideDocks();
 			BuildBottomCommandNavigationDock();
 
-			UpdateHUDDisplay();
 			RecalculateLayoutBounds();
+
+			// Initiate Cloud Handshake
+			LoadColonyDataFromCloud();
+		}
+
+		private async void LoadColonyDataFromCloud()
+		{
+			if (SupabaseService.Instance == null) return;
+
+			GD.Print("[BASE HUD] Initiating Cloud Handshake...");
+			var data = await SupabaseService.Instance.FetchColonyStateAsync();
+
+			if (data != null)
+			{
+				CommanderName = data.commander_name;
+				ResE = data.res_e;
+				ResI = data.res_i;
+				ResT = data.res_t;
+				ResH3 = data.res_h3;
+				GGold = data.mgold; 
+				
+				if (data.building_levels != null) BuildingLevels = data.building_levels;
+
+				// Extract Queue & Boost Data from Cloud
+				ActiveBuild = data.active_build;
+				BuildQueue = data.build_queue ?? new List<GameMath.BuildQueueItem>();
+				ActiveBoosts = data.active_boosts ?? new Dictionary<string, GameMath.BoostData>();
+
+				StorageSiloLevel = BuildingLevels.GetValueOrDefault("hub_silo", 1);
+				RecalculateSiloCap();
+
+				// Run ChronoEngine to catch up on offline production, queues, and fractional boosts
+				var chrono = ChronoEngine.SimulateOfflineTimeline(
+					ResE, ResI, ResT, ResH3, 
+					BuildingLevels, 
+					ActiveBuild,
+					BuildQueue,
+					ActiveBoosts,
+					data.last_sync_time, 
+					DateTimeOffset.UtcNow, 
+					ServerSpeed, 
+					0 
+				);
+
+				ResE = chrono.resE;
+				ResI = chrono.resI;
+				ResT = chrono.resT;
+				ResH3 = chrono.resH3;
+				ActiveBuild = chrono.activeBuild;
+				BuildQueue = chrono.buildQueue;
+				ActiveBoosts = chrono.activeBoosts;
+
+				_isDataLoaded = true;
+				UpdateHUDDisplay();
+				UpdateEngineeringDockUI();
+				
+				EmitSignal(SignalName.ColonyDataLoaded);
+				TriggerInstantSave();
+			}
+			else
+			{
+				GD.PrintErr("[BASE HUD] Failed to load cloud data. Running in offline/fallback mode.");
+				_isDataLoaded = true;
+				UpdateHUDDisplay();
+				UpdateEngineeringDockUI();
+				EmitSignal(SignalName.ColonyDataLoaded);
+			}
+		}
+
+		public void TriggerInstantSave()
+		{
+			if (!_isDataLoaded || SupabaseService.Instance == null) return;
+
+			GD.Print("[BASE HUD] Triggering Instant Cloud Save...");
+			_ = SupabaseService.Instance.SaveColonyStateAsync(ResE, ResI, ResT, ResH3, GGold, BuildingLevels, ActiveBuild, BuildQueue, ActiveBoosts);
+			_autoSaveTimer = 0.0; 
 		}
 
 		public override void _Process(double delta)
 		{
-			_heartbeatTimer += delta;
+			if (!_isDataLoaded) return;
 
-			if (ActiveBuildTimeRemaining > 0)
+			_heartbeatTimer += delta;
+			_autoSaveTimer += delta;
+
+			// Process Active Build Queue
+			if (ActiveBuild != null)
 			{
-				ActiveBuildTimeRemaining = Math.Max(0, ActiveBuildTimeRemaining - delta);
+				ActiveBuild.DurationLeft -= delta;
+				if (ActiveBuild.DurationLeft <= 0)
+				{
+					CompleteActiveBuild();
+				}
+			}
+			else if (BuildQueue.Count > 0)
+			{
+				StartNextBuildInQueue();
 			}
 
 			if (ActiveFleetEta > 0)
@@ -91,13 +199,87 @@ namespace MoonsTotalWar.Engine
 				ActiveFleetEta = Math.Max(0, ActiveFleetEta - delta);
 			}
 
+			// 1-Second Production Heartbeat
 			if (_heartbeatTimer >= 1.0)
 			{
 				_heartbeatTimer = 0.0;
 				TickResourceHeartbeat();
 			}
 
+			// 60-Second Auto-Save
+			if (_autoSaveTimer >= 60.0)
+			{
+				TriggerInstantSave();
+			}
+
 			UpdateTimersDisplay();
+		}
+
+		private void CompleteActiveBuild()
+		{
+			if (ActiveBuild == null) return;
+
+			string bId = ActiveBuild.BuildingId;
+			int newLvl = ActiveBuild.TargetLevel;
+
+			BuildingLevels[bId] = newLvl;
+			if (bId == "hub_silo")
+			{
+				StorageSiloLevel = newLvl;
+				RecalculateSiloCap();
+			}
+
+			GD.Print($"[QUEUE ENGINE] Completed {ActiveBuild.BuildingName} Lvl {newLvl}!");
+			EmitSignal(SignalName.QueuedBuildingCompleted, bId, newLvl);
+
+			ActiveBuild = null;
+			UpdateEngineeringDockUI();
+			TriggerInstantSave();
+		}
+
+		private void StartNextBuildInQueue()
+		{
+			if (BuildQueue.Count == 0) return;
+
+			ActiveBuild = BuildQueue[0];
+			BuildQueue.RemoveAt(0);
+
+			GD.Print($"[QUEUE ENGINE] Starting next build: {ActiveBuild.BuildingName} Lvl {ActiveBuild.TargetLevel}");
+			UpdateEngineeringDockUI();
+			TriggerInstantSave();
+		}
+
+		public void CancelLastQueuedBuild()
+		{
+			if (BuildQueue.Count == 0) return;
+
+			// LIFO: Pop the last item added to the queue
+			int lastIndex = BuildQueue.Count - 1;
+			var canceledItem = BuildQueue[lastIndex];
+			BuildQueue.RemoveAt(lastIndex);
+
+			// Refund 25 GGold and 50% Resources
+			GGold += 25;
+			ResE += canceledItem.CostE * 0.5;
+			ResI += canceledItem.CostI * 0.5;
+			ResT += canceledItem.CostT * 0.5;
+			ResH3 += canceledItem.CostH3 * 0.5;
+
+			GD.Print($"[QUEUE ENGINE] Canceled {canceledItem.BuildingName} Lvl {canceledItem.TargetLevel}. Refunded 25 GGold & 50% Resources.");
+
+			UpdateHUDDisplay();
+			UpdateEngineeringDockUI();
+			TriggerInstantSave();
+		}
+
+		public void RecalculateSiloCap()
+		{
+			SiloCap = GameMath.CalcSiloCapacity(StorageSiloLevel);
+			
+			ResE = Math.Min(SiloCap, ResE);
+			ResI = Math.Min(SiloCap, ResI);
+			ResT = Math.Min(SiloCap, ResT);
+			ResH3 = Math.Min(SiloCap, ResH3);
 		}
 
 		private void RecalculateLayoutBounds()
@@ -114,10 +296,58 @@ namespace MoonsTotalWar.Engine
 
 		private void TickResourceHeartbeat()
 		{
-			double pE = (3 * 210 * ServerSpeed) / 3600.0;
-			double pI = (3 * 210 * ServerSpeed) / 3600.0;
-			double pT = (3 * 210 * ServerSpeed) / 3600.0;
-			double pH3 = (5 * 450 * ServerSpeed) / 3600.0;
+			RecalculateSiloCap();
+
+			// 1. Cleanup Expired Boosts
+			var now = DateTimeOffset.UtcNow;
+			var expiredKeys = new List<string>();
+			foreach (var kvp in ActiveBoosts)
+			{
+				if (kvp.Value.Expiration <= now) expiredKeys.Add(kvp.Key);
+			}
+			foreach (var key in expiredKeys)
+			{
+				ActiveBoosts.Remove(key);
+				GD.Print($"[BASE HUD] Boost for {key} expired and was removed.");
+			}
+
+			// 2. Calculate Base Hourly Rates
+			double rateE = 0, rateI = 0, rateT = 0, rateH3 = 0;
+
+			rateE += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_e_0", 0));
+			rateE += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_e_1", 0));
+			rateE += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_e_2", 0));
+
+			rateI += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_i_0", 0));
+			rateI += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_i_1", 0));
+			rateI += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_i_2", 0));
+
+			rateT += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_t_0", 0));
+			rateT += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_t_1", 0));
+			rateT += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_t_2", 0));
+
+			rateH3 += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_h3_0", 0));
+			rateH3 += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_h3_1", 0));
+			rateH3 += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_h3_2", 0));
+			rateH3 += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_h3_3", 0));
+			rateH3 += GameMath.CalcSubMineYield(BuildingLevels.GetValueOrDefault("dist_h3_4", 0));
+
+			// 3. Apply Live Boost Multipliers
+			double multE = ActiveBoosts.ContainsKey("E") ? ActiveBoosts["E"].Multiplier : 1.0;
+			double multI = ActiveBoosts.ContainsKey("I") ? ActiveBoosts["I"].Multiplier : 1.0;
+			double multT = ActiveBoosts.ContainsKey("T") ? ActiveBoosts["T"].Multiplier : 1.0;
+			double multH3 = ActiveBoosts.ContainsKey("H3") ? ActiveBoosts["H3"].Multiplier : 1.0;
+
+			double finalRateE = rateE * multE;
+			double finalRateI = rateI * multI;
+			double finalRateT = rateT * multT;
+			double finalRateH3 = rateH3 * multH3;
+
+			// 4. Convert to Per-Second Ticks
+			double pE = (finalRateE * ServerSpeed) / 3600.0;
+			double pI = (finalRateI * ServerSpeed) / 3600.0;
+			double pT = (finalRateT * ServerSpeed) / 3600.0;
+			double pH3 = (finalRateH3 * ServerSpeed) / 3600.0;
 
 			ResE = Math.Min(SiloCap, ResE + pE);
 			ResI = Math.Min(SiloCap, ResI + pI);
@@ -129,6 +359,8 @@ namespace MoonsTotalWar.Engine
 
 		public void UpdateHUDDisplay()
 		{
+			RecalculateSiloCap();
+
 			if (_lblCmdName != null) _lblCmdName.Text = CommanderName;
 			if (_btnColonySwitch != null) _btnColonySwitch.Text = $"M:{CurrentMoon} ; B:{CurrentBaseSlot} ({CurrentBaseName}) ▼";
 
@@ -136,17 +368,53 @@ namespace MoonsTotalWar.Engine
 			if (_lblValI != null) _lblValI.Text = $"{(long)ResI:N0}";
 			if (_lblValT != null) _lblValT.Text = $"{(long)ResT:N0}";
 			if (_lblValH3 != null) _lblValH3.Text = $"{(long)ResH3:N0}";
-			if (_lblValMGold != null) _lblValMGold.Text = $"{MGold:N0}";
+			if (_lblValGGold != null) _lblValGGold.Text = $"{GGold:N0}";
 		}
 
 		private void UpdateTimersDisplay()
 		{
-			if (_lblBuildName != null) _lblBuildName.Text = string.IsNullOrEmpty(ActiveBuildName) ? "SYSTEMS IDLE" : ActiveBuildName;
-			if (_lblBuildTimer != null) _lblBuildTimer.Text = ActiveBuildTimeRemaining > 0 ? FormatTime(ActiveBuildTimeRemaining) : "COMPLETE";
-			if (_lblQueuedCount != null) _lblQueuedCount.Text = QueuedBuildCount > 0 ? $"+{QueuedBuildCount} QUEUED" : "QUEUE EMPTY";
+			if (_lblBuildName != null) 
+				_lblBuildName.Text = ActiveBuild != null ? $"{ActiveBuild.BuildingName} Lvl {ActiveBuild.TargetLevel}" : "SYSTEMS IDLE";
+			
+			if (_lblBuildTimer != null) 
+				_lblBuildTimer.Text = ActiveBuild != null ? FormatTime(ActiveBuild.DurationLeft) : "COMPLETE";
 
 			if (_lblFleetStatus != null) _lblFleetStatus.Text = ActiveFleetCount > 0 ? $"🚀 {ActiveFleetCount} FLEET OUTBOUND [{ActiveFleetTarget}]" : "NO ACTIVE FLEET MISSIONS";
 			if (_lblFleetEta != null) _lblFleetEta.Text = ActiveFleetEta > 0 ? $"ETA: {FormatTime(ActiveFleetEta)}" : "DOCKED";
+		}
+
+		public void UpdateEngineeringDockUI()
+		{
+			if (_btnQueueToggle != null)
+			{
+				_btnQueueToggle.Text = BuildQueue.Count > 0 ? $"▼ {BuildQueue.Count} QUEUED UPGRADES" : "QUEUE EMPTY";
+				_btnQueueToggle.Disabled = BuildQueue.Count == 0;
+				if (BuildQueue.Count == 0) _isQueueDropdownOpen = false;
+			}
+
+			if (_queueDropdownPanel != null)
+			{
+				_queueDropdownPanel.Visible = _isQueueDropdownOpen;
+
+				if (_isQueueDropdownOpen)
+				{
+					foreach (Node child in _queueListContainer.GetChildren()) child.QueueFree();
+
+					for (int i = 0; i < BuildQueue.Count; i++)
+					{
+						var item = BuildQueue[i];
+						Label lbl = new Label
+						{
+							Text = $"{i + 1}. {item.BuildingName} Lvl {item.TargetLevel}",
+							Modulate = new Color("#94A3B8")
+						};
+						lbl.AddThemeFontSizeOverride("font_size", 8);
+						_queueListContainer.AddChild(lbl);
+					}
+
+					_btnCancelLast.Visible = BuildQueue.Count > 0;
+				}
+			}
 		}
 
 		// =========================================================================
@@ -271,7 +539,7 @@ namespace MoonsTotalWar.Engine
 			resourceArray.AddChild(CreateResourceCapsule("⛏️", "I", new Color("#06B6D4"), out _lblValI));
 			resourceArray.AddChild(CreateResourceCapsule("💎", "T", new Color("#94A3B8"), out _lblValT));
 			resourceArray.AddChild(CreateResourceCapsule("⛽", "H3", new Color("#EAB308"), out _lblValH3));
-			resourceArray.AddChild(CreateMGoldCapsule("💰", out _lblValMGold));
+			resourceArray.AddChild(CreateGGoldCapsule("💰", out _lblValGGold));
 
 			masterBar.AddChild(resourceArray);
 
@@ -368,7 +636,7 @@ namespace MoonsTotalWar.Engine
 		}
 
 		// =========================================================================
-		// 2. TACTICAL SIDE DOCKS
+		// 2. TACTICAL SIDE DOCKS & QUEUE DROPDOWN
 		// =========================================================================
 		private void BuildTacticalSideDocks()
 		{
@@ -412,27 +680,77 @@ namespace MoonsTotalWar.Engine
 			buildBox.AddChild(dockTitle);
 
 			HBoxContainer activeRow = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
-			_lblBuildName = new Label { Text = ActiveBuildName, Modulate = Colors.White, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			_lblBuildName = new Label { Text = "SYSTEMS IDLE", Modulate = Colors.White, SizeFlagsHorizontal = SizeFlags.ExpandFill };
 			_lblBuildName.AddThemeFontSizeOverride("font_size", 9);
-			_lblBuildTimer = new Label { Text = FormatTime(ActiveBuildTimeRemaining), Modulate = new Color("#22C55E") };
+			_lblBuildTimer = new Label { Text = "COMPLETE", Modulate = new Color("#22C55E") };
 			_lblBuildTimer.AddThemeFontSizeOverride("font_size", 9);
 			activeRow.AddChild(_lblBuildName);
 			activeRow.AddChild(_lblBuildTimer);
 			buildBox.AddChild(activeRow);
 
 			HBoxContainer subRow = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
-			_lblQueuedCount = new Label { Text = $"+{QueuedBuildCount} QUEUED", Modulate = new Color("#94A3B8"), SizeFlagsHorizontal = SizeFlags.ExpandFill };
-			_lblQueuedCount.AddThemeFontSizeOverride("font_size", 8);
+			
+			_btnQueueToggle = new Button { Text = "QUEUE EMPTY", SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Stop, Disabled = true };
+			_btnQueueToggle.AddThemeFontSizeOverride("font_size", 8);
+			_btnQueueToggle.Modulate = new Color("#94A3B8");
+			_btnQueueToggle.Pressed += () => 
+			{
+				_isQueueDropdownOpen = !_isQueueDropdownOpen;
+				UpdateEngineeringDockUI();
+			};
 
 			Button speedupBtn = new Button { Text = "⚡ SPEEDUP", CustomMinimumSize = new Vector2(50, 14), MouseFilter = MouseFilterEnum.Stop };
 			speedupBtn.AddThemeFontSizeOverride("font_size", 7);
 			speedupBtn.Modulate = new Color("#FBBF24");
 			speedupBtn.Pressed += () => EmitSignal(SignalName.SpeedupClicked);
 
-			subRow.AddChild(_lblQueuedCount);
+			subRow.AddChild(_btnQueueToggle);
 			subRow.AddChild(speedupBtn);
 			buildBox.AddChild(subRow);
 			buildDock.AddChild(buildBox);
+
+			// Floating Queue Dropdown Panel
+			_queueDropdownPanel = new Panel();
+			_queueDropdownPanel.SetAnchorsPreset(LayoutPreset.TopRight);
+			_queueDropdownPanel.CustomMinimumSize = new Vector2(180, 120);
+			_queueDropdownPanel.OffsetLeft = -190;
+			_queueDropdownPanel.OffsetRight = -10;
+			_queueDropdownPanel.OffsetTop = 120; 
+			_queueDropdownPanel.OffsetBottom = 240;
+			_queueDropdownPanel.Visible = false;
+
+			StyleBoxFlat dropStyle = new StyleBoxFlat
+			{
+				BgColor = new Color(0.02f, 0.04f, 0.06f, 0.95f),
+				BorderColor = new Color("#F59E0B"),
+				BorderWidthLeft = 1,
+				BorderWidthRight = 1,
+				BorderWidthTop = 0,
+				BorderWidthBottom = 1,
+				CornerRadiusBottomLeft = 6,
+				CornerRadiusBottomRight = 6
+			};
+			_queueDropdownPanel.AddThemeStyleboxOverride("panel", dropStyle);
+			AddChild(_queueDropdownPanel);
+
+			VBoxContainer dropBox = new VBoxContainer();
+			dropBox.SetAnchorsPreset(LayoutPreset.FullRect);
+			dropBox.OffsetLeft = 8;
+			dropBox.OffsetRight = -8;
+			dropBox.OffsetTop = 4;
+			dropBox.OffsetBottom = -4;
+			_queueDropdownPanel.AddChild(dropBox);
+
+			ScrollContainer scroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+			_queueListContainer = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+			scroll.AddChild(_queueListContainer);
+			dropBox.AddChild(scroll);
+
+			_btnCancelLast = new Button { Text = "❌ CANCEL LAST (REFUNDS 25 GGOLD + 50% RES)", CustomMinimumSize = new Vector2(0, 24) };
+			_btnCancelLast.AddThemeFontSizeOverride("font_size", 7);
+			_btnCancelLast.Modulate = new Color("#EF4444");
+			_btnCancelLast.Pressed += CancelLastQueuedBuild;
+			dropBox.AddChild(_btnCancelLast);
 
 			// Fleet Dock (Top-Left)
 			Panel fleetDock = new Panel();
@@ -617,7 +935,7 @@ namespace MoonsTotalWar.Engine
 			Label ico = new Label { Text = icon };
 			ico.AddThemeFontSizeOverride("font_size", 10);
 
-			valLabel = new Label { Text = "50,000", Modulate = Colors.White };
+			valLabel = new Label { Text = "0", Modulate = Colors.White };
 			valLabel.AddThemeFontSizeOverride("font_size", 9);
 
 			row.AddChild(ico);
@@ -626,15 +944,15 @@ namespace MoonsTotalWar.Engine
 			return capsuleBtn;
 		}
 
-		private Button CreateMGoldCapsule(string icon, out Label valLabel)
+		private Button CreateGGoldCapsule(string icon, out Label valLabel)
 		{
 			Button capsuleBtn = new Button
 			{
 				CustomMinimumSize = new Vector2(88, 30),
 				MouseFilter = MouseFilterEnum.Stop,
-				TooltipText = "Moongold Treasury"
+				TooltipText = "Galaxy Gold Treasury"
 			};
-			capsuleBtn.Pressed += () => EmitSignal(SignalName.ResourceClicked, "MGD");
+			capsuleBtn.Pressed += () => EmitSignal(SignalName.ResourceClicked, "GGD");
 
 			StyleBoxFlat goldStyle = new StyleBoxFlat
 			{
@@ -660,7 +978,7 @@ namespace MoonsTotalWar.Engine
 			Label ico = new Label { Text = icon };
 			ico.AddThemeFontSizeOverride("font_size", 10);
 
-			valLabel = new Label { Text = "100", Modulate = new Color("#FBBF24") };
+			valLabel = new Label { Text = "0", Modulate = new Color("#FBBF24") };
 			valLabel.AddThemeFontSizeOverride("font_size", 9);
 
 			Label plusIco = new Label { Text = "+", Modulate = new Color("#22C55E") };
