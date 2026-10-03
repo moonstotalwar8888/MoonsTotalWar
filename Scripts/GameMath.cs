@@ -5,14 +5,12 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER MATHEMATICAL ENGINE (v41.0 Unified Matrix Edition)
-	/// Precision Calibrated 2.5D Isometric Projection, Storage Scaling & Orbital Telemetry.
-	/// Implements exact formulas from the 6 Blueprints:
-	/// - Sub-Mines Production: 100 -> 7,640 units/hr (Levels 1-30).
-	/// - Exponential Build Times: Fast addictive start (seconds) scaling to challenging late game (hours).
-	/// - Unified Requirements Matrix: Dynamically generates checklists for Core Caps, Prerequisites, and Sequence Locks.
-	/// - Storage Silo: 15x Hourly Yield Capacity, 5%->30% Vault Protection.
-	/// - Queue Simulation: Calculates future levels based on pending Engineering Dock queues.
+	/// MOONS TOTAL WAR: MASTER MATHEMATICAL ENGINE (v43.2 Universal Modal Parity Edition)
+	/// - Complete Overload Support for BuildingInspectorModal, BaseHUD, and BaseView.
+	/// - Dynamic Complexity Tiers (0.5 to 5.0) with separate Cost & Time scaling.
+	/// - Dynamic Time Floors: 30s (Tier 0.5), 60s (Tier 1), 300s (Tier 2), 900s (Tier 3), 1800s (Tier 4), 3600s (Tier 5).
+	/// - Node C Anchor (dist_h3_2) properly set to Tier 1 capstone node.
+	/// - Retains 100% of all 28 Core prerequisites, 6 Blueprints formulas, and queue math.
 	/// </summary>
 	public static class GameMath
 	{
@@ -120,6 +118,139 @@ namespace MoonsTotalWar.Engine
 		}
 
 		// ============================================================================
+		// 2. DYNAMIC COMPLEXITY TIERS & PROGRESSION MATRIX
+		// ============================================================================
+
+		public static float GetBuildingComplexityTier(string buildingId, int targetLevel)
+		{
+			string b = (buildingId ?? "").ToLower();
+			int lvl = Math.Max(1, targetLevel);
+
+			// Non-upgradable facilities
+			if (b == "hub_arm" || b == "hub_mgd") return 0.0f;
+
+			// 1. Industrial Core
+			if (b == "hub_cmd" || b == "core")
+			{
+				if (lvl <= 5) return 2.0f;
+				if (lvl <= 10) return 3.0f;
+				if (lvl <= 15) return 4.0f;
+				return 5.0f;
+			}
+
+			// 2. Sub-Mine Districts A, B, D, E (Foundational Starter Nodes)
+			if (b == "dist_e_0" || b == "dist_e_1" ||
+				b == "dist_i_0" || b == "dist_i_1" ||
+				b == "dist_t_0" || b == "dist_t_1" ||
+				b == "dist_h3_0" || b == "dist_h3_1" || b == "dist_h3_3" || b == "dist_h3_4")
+			{
+				if (lvl <= 5) return 0.5f;
+				if (lvl <= 10) return 1.0f;
+				if (lvl <= 15) return 2.0f;
+				if (lvl <= 20) return 3.0f;
+				if (lvl <= 25) return 4.0f;
+				return 5.0f;
+			}
+
+			// 3. Sub-Mine Anchor Node C (District Capstone Node - dist_*_2)
+			if (b == "dist_e_2" || b == "dist_i_2" || b == "dist_t_2" || b == "dist_h3_2")
+			{
+				if (lvl <= 5) return 1.0f;
+				if (lvl <= 10) return 2.0f;
+				if (lvl <= 15) return 3.0f;
+				if (lvl <= 20) return 3.0f;
+				if (lvl <= 25) return 4.0f;
+				return 5.0f;
+			}
+
+			// 4. Fleet Station
+			if (b == "hub_flt")
+			{
+				if (lvl <= 5) return 3.0f;
+				if (lvl <= 10) return 4.0f;
+				if (lvl <= 15) return 4.0f;
+				return 5.0f;
+			}
+
+			// 5. Trade Logistics (Max Lvl 10)
+			if (b == "hub_trd")
+			{
+				if (lvl <= 5) return 3.0f;
+				return 4.0f;
+			}
+
+			// 6. Orbital Shipyard
+			if (b == "hub_mil")
+			{
+				if (lvl <= 5) return 2.0f;
+				if (lvl <= 10) return 3.0f;
+				if (lvl <= 15) return 4.0f;
+				return 5.0f;
+			}
+
+			// 7. Planetary Shield & The Deep Radar (Max Lvl 10)
+			if (b == "hub_shd" || b == "hub_rng")
+			{
+				if (lvl <= 5) return 2.0f;
+				return 5.0f;
+			}
+
+			// 8. Alliance HQ & Storage Silos
+			if (b == "hub_ahq" || b == "hub_silo")
+			{
+				if (lvl <= 5) return 1.0f;
+				if (lvl <= 10) return 2.0f;
+				if (lvl <= 15) return 3.0f;
+				return 4.0f;
+			}
+
+			// 9. Research Directorate
+			if (b == "hub_rsh")
+			{
+				if (lvl <= 5) return 2.0f;
+				if (lvl <= 10) return 3.0f;
+				if (lvl <= 15) return 4.0f;
+				return 5.0f;
+			}
+
+			// 10. Commanders Spire
+			if (b == "hub_com")
+			{
+				if (lvl <= 5) return 2.0f;
+				if (lvl <= 10) return 4.0f;
+				return 5.0f;
+			}
+
+			return 1.0f;
+		}
+
+		public static (float costMultiplier, float timeMultiplier, int timeFloorSec) GetComplexityMultipliers(float tier)
+		{
+			if (tier <= 0.0f) return (0.0f, 0.0f, 0);
+			if (tier <= 0.5f) return (0.7f, 0.5f, 30);      // 30s floor (Fast addictive starter clicks)
+			if (tier <= 1.0f) return (1.0f, 1.0f, 60);      // 60s (1 min floor)
+			if (tier <= 2.0f) return (1.2f, 1.5f, 300);     // 300s (5 min floor)
+			if (tier <= 3.0f) return (1.5f, 2.5f, 900);     // 900s (15 min floor)
+			if (tier <= 4.0f) return (2.0f, 4.0f, 1800);    // 1800s (30 min floor)
+			return (3.0f, 6.0f, 3600);                      // 3600s (1 hour floor)
+		}
+
+		public static bool IsBuildingUpgradable(string buildingId)
+		{
+			string b = (buildingId ?? "").ToLower();
+			return b != "hub_arm" && b != "hub_mgd";
+		}
+
+		public static int GetBuildingMaxLevel(string buildingId)
+		{
+			string b = (buildingId ?? "").ToLower();
+			if (b == "hub_arm" || b == "hub_mgd") return 1;
+			if (b == "hub_trd" || b == "hub_shd" || b == "hub_rng") return 10;
+			if (b.StartsWith("dist_")) return 30;
+			return 20;
+		}
+
+		// ============================================================================
 		// 3. BLUEPRINT PRODUCTION CURVES
 		// ============================================================================
 		public static long CalcSubMineYield(int level)
@@ -167,26 +298,39 @@ namespace MoonsTotalWar.Engine
 		}
 
 		// ============================================================================
-		// 6. BLUEPRINT COST CALCULATIONS
+		// 6. BLUEPRINT COST CALCULATIONS (OVERLOADS FOR MODAL & HUD)
 		// ============================================================================
+
+		// Overload A (2 Arguments): Directly called by BuildingInspectorModal line 969
 		public static (long e, long i, long t, long h) CalcSubMineUpgradeCost(string districtCode, int currentLevel)
 		{
+			string dist = (districtCode ?? "E").ToLower();
+			return CalcSubMineUpgradeCost($"dist_{dist}_0", districtCode, currentLevel);
+		}
+
+		// Overload B (3 Arguments): Called with explicit buildingId
+		public static (long e, long i, long t, long h) CalcSubMineUpgradeCost(string buildingId, string districtCode, int currentLevel)
+		{
 			int nextLvl = Math.Max(1, currentLevel + 1);
-			double scale = Math.Pow(1.22, nextLvl - 1);
-			long baseTotal = (long)(100 * scale); 
+			float tier = GetBuildingComplexityTier(buildingId, nextLvl);
+			var (cMult, _, _) = GetComplexityMultipliers(tier);
+
+			double scale = Math.Pow(1.38, nextLvl - 1); 
+			long baseTotal = (long)(100 * scale * cMult); 
 
 			string dist = (districtCode ?? "E").ToUpper();
 
 			if (dist == "E") return (Math.Max(10, (long)(baseTotal * 0.333)), Math.Max(10, (long)(baseTotal * 0.500)), Math.Max(5, (long)(baseTotal * 0.167)), 0);
 			else if (dist == "I") return (Math.Max(10, (long)(baseTotal * 0.500)), Math.Max(10, (long)(baseTotal * 0.167)), Math.Max(5, (long)(baseTotal * 0.333)), 0);
 			else if (dist == "T") return (Math.Max(5, (long)(baseTotal * 0.167)), Math.Max(10, (long)(baseTotal * 0.333)), Math.Max(10, (long)(baseTotal * 0.500)), 0);
-			else return (Math.Max(20, (long)(100 * scale)), Math.Max(15, (long)(80 * scale)), Math.Max(10, (long)(70 * scale)), 0);
+			else return (Math.Max(20, (long)(100 * scale * cMult)), Math.Max(15, (long)(80 * scale * cMult)), Math.Max(10, (long)(70 * scale * cMult)), 0);
 		}
 
+		// Overload A (5 Arguments): Directly called by BuildingInspectorModal line 984
 		public static (long e, long i, long t, long h) CalcCost(int lvl, long baseE, long baseI, long baseT, long baseH = 0)
 		{
 			int safeLvl = Math.Max(0, lvl);
-			double scaling = 1.32;
+			double scaling = 1.38; 
 			return (
 				(long)Math.Floor(baseE * Math.Pow(scaling, safeLvl)),
 				(long)Math.Floor(baseI * Math.Pow(scaling, safeLvl)),
@@ -195,42 +339,152 @@ namespace MoonsTotalWar.Engine
 			);
 		}
 
+		// Overload B (6 Arguments): Called with explicit buildingId
+		public static (long e, long i, long t, long h) CalcCost(string buildingId, int lvl, long baseE, long baseI, long baseT, long baseH = 0)
+		{
+			int nextLvl = Math.Max(1, lvl + 1);
+			float tier = GetBuildingComplexityTier(buildingId, nextLvl);
+			var (cMult, _, _) = GetComplexityMultipliers(tier);
+
+			double scaling = 1.38; 
+			return (
+				(long)Math.Floor(baseE * Math.Pow(scaling, lvl) * cMult),
+				(long)Math.Floor(baseI * Math.Pow(scaling, lvl) * cMult),
+				(long)Math.Floor(baseT * Math.Pow(scaling, lvl) * cMult),
+				(long)Math.Floor(baseH * Math.Pow(scaling, lvl) * cMult)
+			);
+		}
+
 		public static (long e, long i, long t, long h) CalcIndustrialCoreCost(int currentLevel)
 		{
 			int nextLvl = Math.Max(1, currentLevel + 1);
-			double factor = Math.Pow(1.35, nextLvl - 1);
+			float tier = GetBuildingComplexityTier("hub_cmd", nextLvl);
+			var (cMult, _, _) = GetComplexityMultipliers(tier);
+
+			double factor = Math.Pow(1.40, nextLvl - 1) * (cMult / 1.2f);
 			return ((long)(350 * factor), (long)(350 * factor), (long)(150 * factor), 0);
 		}
 
 		public static (long e, long i, long t, long h) CalcStorageSiloCost(int currentLevel)
 		{
 			int nextLvl = Math.Max(1, currentLevel + 1);
-			double factor = Math.Pow(1.26, nextLvl - 1);
+			float tier = GetBuildingComplexityTier("hub_silo", nextLvl);
+			var (cMult, _, _) = GetComplexityMultipliers(tier);
+
+			double factor = Math.Pow(1.30, nextLvl - 1) * cMult;
 			return ((long)(150 * factor), (long)(200 * factor), (long)(100 * factor), 0);
 		}
 
 		// ============================================================================
-		// 7. EXPONENTIAL BUILD TIME CALCULATIONS
+		// 7. EXPONENTIAL BUILD TIME CALCULATIONS (OVERLOADS FOR MODAL & HUD)
 		// ============================================================================
+
+		// Overload A (1 or 2 Arguments): Directly called by BuildingInspectorModal line 970
 		public static int GetSubMineBuildTimeSec(int currentLevel, float serverSpeed = 1.0f)
 		{
+			return GetSubMineBuildTimeSec("dist_e_0", currentLevel, serverSpeed);
+		}
+
+		// Overload B (2 or 3 Arguments): Called with explicit buildingId
+		public static int GetSubMineBuildTimeSec(string buildingId, int currentLevel, float serverSpeed = 1.0f)
+		{
 			int nextLvl = Math.Max(1, currentLevel + 1);
-			double baseSec = 30.0 * Math.Pow(1.25, nextLvl - 1);
-			return (int)Math.Max(5, Math.Floor(baseSec / Math.Max(1.0f, serverSpeed)));
+			float tier = GetBuildingComplexityTier(buildingId, nextLvl);
+			var (_, tMult, floorSec) = GetComplexityMultipliers(tier);
+
+			double baseSec = 45.0 * Math.Pow(1.30, nextLvl - 1) * tMult;
+			int effectiveSec = (int)Math.Max(floorSec, Math.Floor(baseSec));
+
+			return (int)Math.Max(1, Math.Floor(effectiveSec / Math.Max(1.0f, serverSpeed)));
 		}
 
 		public static int GetIndustrialCoreBuildTimeSec(int currentLevel, float serverSpeed = 1.0f)
 		{
 			int nextLvl = Math.Max(1, currentLevel + 1);
-			double baseSec = 60.0 * Math.Pow(1.33, nextLvl - 1);
-			return (int)Math.Max(10, Math.Floor(baseSec / Math.Max(1.0f, serverSpeed)));
+			float tier = GetBuildingComplexityTier("hub_cmd", nextLvl);
+			var (_, tMult, floorSec) = GetComplexityMultipliers(tier);
+
+			double baseSec = 90.0 * Math.Pow(1.35, nextLvl - 1) * (tMult / 1.5f);
+			int effectiveSec = (int)Math.Max(floorSec, Math.Floor(baseSec));
+
+			return (int)Math.Max(1, Math.Floor(effectiveSec / Math.Max(1.0f, serverSpeed)));
 		}
 
 		public static int GetStorageSiloBuildTimeSec(int currentLevel, float serverSpeed = 1.0f)
 		{
 			int nextLvl = Math.Max(1, currentLevel + 1);
-			double baseSec = 45.0 * Math.Pow(1.26, nextLvl - 1);
-			return (int)Math.Max(10, Math.Floor(baseSec / Math.Max(1.0f, serverSpeed)));
+			float tier = GetBuildingComplexityTier("hub_silo", nextLvl);
+			var (_, tMult, floorSec) = GetComplexityMultipliers(tier);
+
+			double baseSec = 60.0 * Math.Pow(1.30, nextLvl - 1) * tMult;
+			int effectiveSec = (int)Math.Max(floorSec, Math.Floor(baseSec));
+
+			return (int)Math.Max(1, Math.Floor(effectiveSec / Math.Max(1.0f, serverSpeed)));
+		}
+
+		/// <summary>
+		/// Master universal metrics evaluator: Computes Cost, Build Time, Complexity Tier, and Time Floor for ANY building.
+		/// </summary>
+		public static (long costE, long costI, long costT, long costH3, int buildTimeSec, float tier) GetBuildingUpgradeMetrics(
+			string buildingId, int currentLevel, float serverSpeed = 1.0f)
+		{
+			string b = (buildingId ?? "").ToLower();
+			if (!IsBuildingUpgradable(b))
+			{
+				return (0, 0, 0, 0, 0, 0.0f);
+			}
+
+			int nextLvl = Math.Max(1, currentLevel + 1);
+			float tier = GetBuildingComplexityTier(b, nextLvl);
+			var (cMult, tMult, floorSec) = GetComplexityMultipliers(tier);
+
+			// 1. Sub-Mines
+			if (b.StartsWith("dist_"))
+			{
+				string dist = b.Substring(5, b.IndexOf('_', 5) - 5).ToUpper();
+				var costs = CalcSubMineUpgradeCost(b, dist, currentLevel);
+				int time = GetSubMineBuildTimeSec(b, currentLevel, serverSpeed);
+				return (costs.e, costs.i, costs.t, costs.h, time, tier);
+			}
+
+			// 2. Industrial Core
+			if (b == "hub_cmd")
+			{
+				var costs = CalcIndustrialCoreCost(currentLevel);
+				int time = GetIndustrialCoreBuildTimeSec(currentLevel, serverSpeed);
+				return (costs.e, costs.i, costs.t, costs.h, time, tier);
+			}
+
+			// 3. Storage Silos
+			if (b == "hub_silo")
+			{
+				var costs = CalcStorageSiloCost(currentLevel);
+				int time = GetStorageSiloBuildTimeSec(currentLevel, serverSpeed);
+				return (costs.e, costs.i, costs.t, costs.h, time, tier);
+			}
+
+			// 4. All Other Hub Buildings
+			long baseE = 200;
+			long baseI = 200;
+			long baseT = 100;
+			long baseH = 0;
+
+			if (b == "hub_mil") { baseE = 300; baseI = 400; baseT = 200; }
+			else if (b == "hub_shd") { baseE = 500; baseI = 200; baseT = 400; }
+			else if (b == "hub_com") { baseE = 400; baseI = 400; baseT = 300; }
+			else if (b == "hub_flt") { baseE = 250; baseI = 350; baseT = 150; }
+
+			double costFactor = Math.Pow(1.36, nextLvl - 1) * cMult;
+			long finalE = (long)Math.Max(50, baseE * costFactor);
+			long finalI = (long)Math.Max(50, baseI * costFactor);
+			long finalT = (long)Math.Max(25, baseT * costFactor);
+			long finalH = (long)Math.Max(0, baseH * costFactor);
+
+			double baseSec = 80.0 * Math.Pow(1.32, nextLvl - 1) * tMult;
+			int effectiveSec = (int)Math.Max(floorSec, Math.Floor(baseSec));
+			int finalTime = (int)Math.Max(1, Math.Floor(effectiveSec / Math.Max(1.0f, serverSpeed)));
+
+			return (finalE, finalI, finalT, finalH, finalTime, tier);
 		}
 
 		// ============================================================================
@@ -251,21 +505,16 @@ namespace MoonsTotalWar.Engine
 			public List<RequirementStatus> Requirements;
 		}
 
-		/// <summary>
-		/// Generates a unified checklist of requirements for ANY building (Core, Mines, Hubs).
-		/// </summary>
 		public static List<RequirementStatus> GetFacilityRequirements(
 			string buildingId, int targetLevel, string districtCode, int slotIndex, Dictionary<string, int> simLevels)
 		{
 			var reqs = new List<RequirementStatus>();
 
-			// 1. If it's the Industrial Core, return its massive sub-building matrix
 			if (buildingId == "hub_cmd")
 			{
 				return CheckIndustrialCoreRequirements(targetLevel, simLevels).Requirements;
 			}
 
-			// 2. For all other buildings, check the Industrial Core Level Requirement
 			var coreUnlock = CheckIndustrialCoreUnlock(buildingId, 1); 
 			if (coreUnlock.requiredCoreLevel > 1 || buildingId == "hub_silo" || buildingId == "hub_mgd") 
 			{
@@ -279,7 +528,6 @@ namespace MoonsTotalWar.Engine
 				});
 			}
 
-			// 3. For Sub-Mines, check the Sequence Lock Requirement (Node B requires Node A)
 			if (!string.IsNullOrEmpty(districtCode) && slotIndex > 0)
 			{
 				string prevId = $"dist_{districtCode.ToLower()}_{slotIndex - 1}";
@@ -316,7 +564,8 @@ namespace MoonsTotalWar.Engine
 
 			switch (targetCoreLevel)
 			{
-				case 2: break;
+				case 2:
+					break;
 				case 3:
 					reqDefs.Add(("dist_e_2", "Power Station C", 2));
 					reqDefs.Add(("dist_i_2", "Iron Mine C", 2));

@@ -5,12 +5,13 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v48.0 Titanium Smelter & Standard Seating Edition)
+	/// MOONS TOTAL WAR: MASTER 2.5D BASE VIEWPORT (v49.0 H3 Distillery Integration Edition)
 	/// - Central Citadel: 6x6 (36 Tiles) Megastructure Industrial Core seated on ground diamond.
 	/// - Storage Silos: 4x4 (16 Tiles) Pressurized Containment Vault Facility.
 	/// - Power Station Grid: 2x2 Footprints for Nodes A, B, and C with live plasma sprites.
 	/// - Iron Extraction Grid: 2x2 Footprints for Nodes A, B, and C with standard uniform diamond seating.
 	/// - Titanium Smelter Grid: 2x2 Footprints for Nodes A, B, and C with high-heat industrial refinery sprites.
+	/// - H3 Distillery Grid: 2x2 Footprints for Nodes A, B, C, D, and E with crimson hazard refinery sprites.
 	/// - Dedicated Badge Layer (ZIndex = 4000): Prioritizes building names and level displays so they NEVER hide behind any building art.
 	/// - Centralized Diamond Hitbox Testing: Eliminates false clicks outside node boundaries.
 	/// - Drag vs Click Disambiguation: Moving the camera will never trigger accidental building opens.
@@ -25,6 +26,7 @@ namespace MoonsTotalWar.Engine
 		[Export] public Texture2D PowerStationTexture;
 		[Export] public Texture2D IronMineTexture;
 		[Export] public Texture2D TitaniumSmelterTexture;
+		[Export] public Texture2D H3DistilleryTexture;
 
 		public const int GRID_COLS = 48; 
 		public const int GRID_ROWS = 50; 
@@ -436,6 +438,12 @@ namespace MoonsTotalWar.Engine
 				titaniumTexture = ResourceLoader.Load<Texture2D>("res://Assets/Buildings/titanium_smelter.png");
 			}
 
+			Texture2D h3Texture = H3DistilleryTexture;
+			if (h3Texture == null && ResourceLoader.Exists("res://Assets/Buildings/h3_distillery.png"))
+			{
+				h3Texture = ResourceLoader.Load<Texture2D>("res://Assets/Buildings/h3_distillery.png");
+			}
+
 			var defs = new[]
 			{
 				new { Id = "hub_cmd", Name = "Industrial Core", Col = 19, Row = 17, W = 6, H = 6, ColorHex = "#ffffff", Icon = "🏢", District = "", Slot = 0 },
@@ -604,6 +612,25 @@ namespace MoonsTotalWar.Engine
 					bSprite.Scale = new Vector2(scaleFactor, scaleFactor);
 
 					float spriteScaledHeight = titaniumTexture.GetHeight() * scaleFactor;
+					bSprite.Position = new Vector2(0, (footprintH * 0.5f) - (spriteScaledHeight * 0.5f) - 4.0f);
+
+					nodeAnchor.AddChild(bSprite);
+					poly.Visible = false;
+				}
+				// 6. H3 Distilleries A, B, C, D, and E (2x2 - Crimson Hazard Refinery Sprites)
+				else if (def.Id.StartsWith("dist_h3_") && h3Texture != null)
+				{
+					bSprite = new Sprite2D
+					{
+						Name = $"H3VisualSprite_{def.Id}",
+						Texture = h3Texture,
+						Centered = true
+					};
+
+					float scaleFactor = footprintW / h3Texture.GetWidth();
+					bSprite.Scale = new Vector2(scaleFactor, scaleFactor);
+
+					float spriteScaledHeight = h3Texture.GetHeight() * scaleFactor;
 					bSprite.Position = new Vector2(0, (footprintH * 0.5f) - (spriteScaledHeight * 0.5f) - 4.0f);
 
 					nodeAnchor.AddChild(bSprite);

@@ -5,13 +5,14 @@ using Godot;
 namespace MoonsTotalWar.Engine
 {
 	/// <summary>
-	/// MOONS TOTAL WAR: MASTER TACTICAL FACILITY INSPECTOR MODAL (v17.1 Unified Matrix & Queue Lock Edition)
+	/// MOONS TOTAL WAR: MASTER TACTICAL FACILITY INSPECTOR MODAL (v17.2 Universal Sync Edition)
 	/// - Dynamically centers on physical screen viewport on open.
 	/// - Universal Construction Matrix: All buildings display their Core and Sequence requirements in a unified checklist.
 	/// - Queue Lock: Queue button is disabled ("DOCK IDLE") unless an upgrade is already actively running.
 	/// - Tri-Button System: Start Upgrade (Free), Queue Upgrade (25 GGold), Instant Assembly (50 GGold).
 	/// - Premium Boosts: 7-Day and 30-Day production multipliers with Global variants.
 	/// - Transaction Safety Net: Intercepts all GGold purchases with a strict confirmation overlay.
+	/// - Fully synchronized with GameMath Complexity Tiers & Dynamic Floors.
 	/// </summary>
 	public partial class BuildingInspectorModal : Control
 	{
@@ -967,26 +968,10 @@ namespace MoonsTotalWar.Engine
 			(long e, long i, long t, long h) cost;
 			int durationSec;
 
-			if (isSubMine)
-			{
-				cost = GameMath.CalcSubMineUpgradeCost(ActiveDistrictCode, simActiveLevel);
-				durationSec = GameMath.GetSubMineBuildTimeSec(simActiveLevel);
-			}
-			else if (ActiveBuildingId == "hub_cmd")
-			{
-				cost = GameMath.CalcIndustrialCoreCost(simActiveLevel);
-				durationSec = GameMath.GetIndustrialCoreBuildTimeSec(simActiveLevel);
-			}
-			else if (ActiveBuildingId == "hub_silo")
-			{
-				cost = GameMath.CalcStorageSiloCost(simActiveLevel);
-				durationSec = GameMath.GetStorageSiloBuildTimeSec(simActiveLevel);
-			}
-			else
-			{
-				cost = GameMath.CalcCost(simActiveLevel, 850, 150, 120, 0);
-				durationSec = 120;
-			}
+			// Universal clean calculation that handles all buildings seamlessly
+			var metrics = GameMath.GetBuildingUpgradeMetrics(ActiveBuildingId, simActiveLevel);
+			cost = (metrics.costE, metrics.costI, metrics.costT, metrics.costH3);
+			durationSec = metrics.buildTimeSec;
 
 			GridContainer reqGrid = new GridContainer();
 			reqGrid.Columns = 2;
