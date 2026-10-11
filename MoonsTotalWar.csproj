@@ -2,6 +2,38 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <TargetFramework Condition=" '$(GodotTargetPlatform)' == 'android' ">net9.0</TargetFramework>
-    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <EnableDynamicLoading Condition=" '$(EnableNativeAot)' != 'true' ">true</EnableDynamicLoading>
+    <PublishAot Condition=" '$(EnableNativeAot)' == 'true' or '$(GodotTargetPlatform)' == 'ios' ">true</PublishAot>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
+
+  <!-- Release Export Hardening: Strip PDB symbols, scrub local developer paths, and strip diagnostic metadata -->
+  <PropertyGroup Condition=" '$(Configuration)' == 'ExportRelease' ">
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/mtw</PathMap>
+    <StackTraceSupport>false</StackTraceSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <TrimmerRootAssembly Include="MoonsTotalWar" />
+    <Compile Remove="android/**" />
+    <Compile Remove="android\**" />
+    <Compile Remove="**/android/**" />
+    <Compile Remove="**\android\**" />
+    <EmbeddedResource Remove="android/**" />
+    <EmbeddedResource Remove="android\**" />
+    <EmbeddedResource Remove="**/android/**" />
+    <EmbeddedResource Remove="**\android\**" />
+    <None Remove="android/**" />
+    <None Remove="android\**" />
+    <None Remove="**/android/**" />
+    <None Remove="**\android\**" />
+  </ItemGroup>
 </Project>

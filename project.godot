@@ -13,19 +13,26 @@ config_version=5
 config/name="MoonsTotalWar"
 run/main_scene="uid://ds6tnjbuayh4j"
 config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
-config/icon="res://icon.svg"
+boot_splash/bg_color=Color(0.019607844, 0.039215688, 0.078431375, 1)
+boot_splash/image="uid://b58eecg5hfe7b"
+config/icon="uid://bp8o0hrlb840r"
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
-window/size/initial_position=Vector2i(0, -99)
+window/size/mode=2
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+window/handheld/orientation=4
 
 [dotnet]
 
 project/assembly_name="MoonsTotalWar"
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
 
 [physics]
 
@@ -36,3 +43,4 @@ project/assembly_name="MoonsTotalWar"
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

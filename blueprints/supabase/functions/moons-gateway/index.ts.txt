@@ -1,0 +1,109 @@
+// ============================================================================
+// MOONS TOTAL WAR: SUPABASE EDGE FUNCTION GATEWAY (moons-gateway)
+// Deploy with: supabase functions deploy moons-gateway --no-verify-jwt
+// Set secret:  supabase secrets set MTW_HMAC_SECRET=MTW_V25_EDGE_HMAC_GUARD_SECRET_8842
+// ============================================================================
+
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+
+const HMAC_SECRET = Deno.env.get("MTW_HMAC_SECRET") ?? "MTW_V25_EDGE_HMAC_GUARD_SECRET_8842";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const MAX_CLOCK_SKEW_SECONDS = 300; // 5-minute anti-replay window
+
+async function computeHmacHex(secret: string, message: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+  return Array.from(new Uint8Array(sigBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers":
+          "authorization, x-client-info, apikey, content-type, prefer, x-moons-timestamp, x-moons-signature, x-moons-target-path, x-moons-target-method",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+      },
+    });
+  }
+
+  try {
+    const tsHeader = req.headers.get("x-moons-timestamp") ?? "";
+    const sigHeader = (req.headers.get("x-moons-signature") ?? "").toLowerCase();
+    const targetPath = req.headers.get("x-moons-target-path") ?? "";
+    const targetMethod = (req.headers.get("x-moons-target-method") ?? req.method).toUpperCase();
+
+    if (!tsHeader || !sigHeader || !targetPath.startsWith("/")) {
+      return new Response(JSON.stringify({ error: "Forbidden: Missing gateway security headers" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // 1. Verify anti-replay timestamp window
+    const clientUnix = parseInt(tsHeader, 10);
+    const nowUnix = Math.floor(Date.now() / 1000);
+    if (isNaN(clientUnix) || Math.abs(nowUnix - clientUnix) > MAX_CLOCK_SKEW_SECONDS) {
+      return new Response(JSON.stringify({ error: "Forbidden: Request timestamp expired" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // 2. Read body & verify HMAC-SHA256 client signature
+    const rawBody = targetMethod === "GET" || targetMethod === "DELETE" ? "" : await req.text();
+    const canonical = `${tsHeader}|${targetMethod}|${targetPath}|${rawBody}`;
+    const expectedSig = await computeHmacHex(HMAC_SECRET, canonical);
+
+    if (expectedSig !== sigHeader) {
+      return new Response(JSON.stringify({ error: "Forbidden: Invalid client HMAC signature" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // 3. Forward verified request to internal Supabase Auth / PostgREST endpoint
+    const upstreamUrl = `${SUPABASE_URL}${targetPath}`;
+    const authHeader = req.headers.get("authorization") ?? `Bearer ${SUPABASE_ANON_KEY}`;
+    const preferHeader = req.headers.get("prefer") ?? "";
+
+    const forwardHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": authHeader,
+    };
+    if (preferHeader) {
+      forwardHeaders["Prefer"] = preferHeader;
+    }
+
+    const upstreamResp = await fetch(upstreamUrl, {
+      method: targetMethod,
+      headers: forwardHeaders,
+      body: targetMethod === "GET" || targetMethod === "DELETE" ? undefined : rawBody,
+    });
+
+    const respText = await upstreamResp.text();
+    return new Response(respText, {
+      status: upstreamResp.status,
+      headers: {
+        "Content-Type": upstreamResp.headers.get("Content-Type") ?? "application/json",
+      },
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: "Gateway error", details: String(err) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+});

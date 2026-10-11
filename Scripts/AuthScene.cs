@@ -10,6 +10,11 @@ namespace MoonsTotalWar.UI
 	/// </summary>
 	public partial class AuthScene : Control
 	{
+		private PanelContainer _centerPanel;
+		private PanelContainer _modeBannerPanel;
+		private Label _modeBannerLabel;
+		private Label _userLbl;
+		private Label _passLbl;
 		private LineEdit _usernameInput;
 		private LineEdit _passwordInput;
 		private LineEdit _callsignInput;
@@ -19,6 +24,7 @@ namespace MoonsTotalWar.UI
 		private Button _submitBtn;
 		private Button _genesisBtn;
 		private Button _backBtn;
+		private CheckBox _termsCheckBox;
 
 		private VBoxContainer _authFormBox;
 		private VBoxContainer _genesisFormBox;
@@ -37,6 +43,7 @@ namespace MoonsTotalWar.UI
 			}
 
 			BuildAuthUI();
+			MusicManager.PlayTrack(this, MusicManager.TRACK_LOGIN);
 		}
 
 		private void BuildAuthUI()
@@ -45,57 +52,57 @@ namespace MoonsTotalWar.UI
 			AnchorsPreset = (int)LayoutPreset.FullRect;
 
 			// Dark Glass Center Panel
-			PanelContainer centerPanel = new PanelContainer();
-			centerPanel.CustomMinimumSize = new Vector2(480, 520);
-			centerPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
-			AddChild(centerPanel);
-
-			StyleBoxFlat panelStyle = new StyleBoxFlat();
-			panelStyle.BgColor = new Color(0.04f, 0.06f, 0.10f, 0.95f);
-			panelStyle.SetCornerRadiusAll(12);
-			panelStyle.SetBorderWidthAll(2);
-			panelStyle.BorderColor = new Color(0f, 0.94f, 1f, 0.8f);
-			centerPanel.AddThemeStyleboxOverride("panel", panelStyle);
+			_centerPanel = new PanelContainer();
+			_centerPanel.CustomMinimumSize = new Vector2(540, 560);
+			_centerPanel.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+			AddChild(_centerPanel);
 
 			VBoxContainer contentBox = new VBoxContainer();
-			contentBox.AddThemeConstantOverride("separation", 15);
+			contentBox.AddThemeConstantOverride("separation", 14);
 			
 			MarginContainer margin = new MarginContainer();
-			margin.AddThemeConstantOverride("margin_left", 25);
-			margin.AddThemeConstantOverride("margin_right", 25);
-			margin.AddThemeConstantOverride("margin_top", 25);
-			margin.AddThemeConstantOverride("margin_bottom", 25);
+			margin.AddThemeConstantOverride("margin_left", 28);
+			margin.AddThemeConstantOverride("margin_right", 28);
+			margin.AddThemeConstantOverride("margin_top", 24);
+			margin.AddThemeConstantOverride("margin_bottom", 24);
 			margin.AddChild(contentBox);
-			centerPanel.AddChild(margin);
+			_centerPanel.AddChild(margin);
 
 			// Title
 			Label titleLabel = new Label();
-			titleLabel.Text = "MOONS: TOTAL WAR";
+			titleLabel.Text = "M O O N S : T O T A L   W A R";
 			titleLabel.HorizontalAlignment = HorizontalAlignment.Center;
-			titleLabel.AddThemeFontSizeOverride("font_size", 24);
-			titleLabel.Modulate = new Color(0f, 0.94f, 1f);
+			titleLabel.AddThemeFontSizeOverride("font_size", 26);
+			titleLabel.Modulate = new Color(0.96f, 0.24f, 0.24f);
 			contentBox.AddChild(titleLabel);
 
-			Label subTitleLabel = new Label();
-			subTitleLabel.Text = "CENTRAL COMMAND ACCESS PORTAL";
-			subTitleLabel.HorizontalAlignment = HorizontalAlignment.Center;
-			subTitleLabel.AddThemeFontSizeOverride("font_size", 11);
-			subTitleLabel.Modulate = new Color(0.6f, 0.7f, 0.8f);
-			contentBox.AddChild(subTitleLabel);
+			_modeBannerPanel = new PanelContainer { CustomMinimumSize = new Vector2(0, 38) };
+			_modeBannerLabel = new Label
+			{
+				Text = "🔓 EXISTING COMMANDER LOGIN",
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Center
+			};
+			_modeBannerLabel.AddThemeFontSizeOverride("font_size", 14);
+			_modeBannerPanel.AddChild(_modeBannerLabel);
+			contentBox.AddChild(_modeBannerPanel);
 
 			// Tab switch buttons (LOGIN / REGISTER)
 			HBoxContainer tabRow = new HBoxContainer();
 			tabRow.Alignment = BoxContainer.AlignmentMode.Center;
+			tabRow.AddThemeConstantOverride("separation", 12);
 			
 			_loginTabBtn = new Button();
-			_loginTabBtn.Text = "LOGIN";
-			_loginTabBtn.CustomMinimumSize = new Vector2(180, 40);
+			_loginTabBtn.Text = "🔓 LOGIN";
+			_loginTabBtn.CustomMinimumSize = new Vector2(220, 46);
+			_loginTabBtn.AddThemeFontSizeOverride("font_size", 15);
 			_loginTabBtn.Pressed += () => SetAuthMode(false);
 			tabRow.AddChild(_loginTabBtn);
 
 			_registerTabBtn = new Button();
-			_registerTabBtn.Text = "REGISTER";
-			_registerTabBtn.CustomMinimumSize = new Vector2(180, 40);
+			_registerTabBtn.Text = "🎖️ REGISTER NEW";
+			_registerTabBtn.CustomMinimumSize = new Vector2(220, 46);
+			_registerTabBtn.AddThemeFontSizeOverride("font_size", 15);
 			_registerTabBtn.Pressed += () => SetAuthMode(true);
 			tabRow.AddChild(_registerTabBtn);
 
@@ -103,34 +110,75 @@ namespace MoonsTotalWar.UI
 
 			// AUTH FORM BOX
 			_authFormBox = new VBoxContainer();
-			_authFormBox.AddThemeConstantOverride("separation", 10);
+			_authFormBox.AddThemeConstantOverride("separation", 12);
 			contentBox.AddChild(_authFormBox);
 
-			Label userLbl = new Label();
-			userLbl.Text = "MASTER USERNAME:";
-			userLbl.AddThemeFontSizeOverride("font_size", 10);
-			_authFormBox.AddChild(userLbl);
+			_userLbl = new Label();
+			_userLbl.Text = "MASTER USERNAME:";
+			_userLbl.AddThemeFontSizeOverride("font_size", 14);
+			_authFormBox.AddChild(_userLbl);
 
 			_usernameInput = new LineEdit();
 			_usernameInput.PlaceholderText = "Enter callsign or username...";
-			_usernameInput.CustomMinimumSize = new Vector2(0, 42);
+			_usernameInput.CustomMinimumSize = new Vector2(0, 48);
+			_usernameInput.AddThemeFontSizeOverride("font_size", 16);
 			_authFormBox.AddChild(_usernameInput);
 
-			Label passLbl = new Label();
-			passLbl.Text = "SECURITY KEYCODE:";
-			passLbl.AddThemeFontSizeOverride("font_size", 10);
-			_authFormBox.AddChild(passLbl);
+			_passLbl = new Label();
+			_passLbl.Text = "SECURITY KEYCODE:";
+			_passLbl.AddThemeFontSizeOverride("font_size", 14);
+			_authFormBox.AddChild(_passLbl);
 
 			_passwordInput = new LineEdit();
 			_passwordInput.PlaceholderText = "Enter security key...";
 			_passwordInput.Secret = true;
-			_passwordInput.CustomMinimumSize = new Vector2(0, 42);
-			_authFormBox.AddChild(_passwordInput);
+			_passwordInput.CustomMinimumSize = new Vector2(0, 48);
+			_passwordInput.AddThemeFontSizeOverride("font_size", 16);
+			_passwordInput.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			_passwordInput.TextSubmitted += (_) => OnSubmitAuth();
+			_usernameInput.TextSubmitted += (_) => _passwordInput.GrabFocus();
+
+			HBoxContainer passRow = new HBoxContainer();
+			passRow.AddThemeConstantOverride("separation", 8);
+			passRow.AddChild(_passwordInput);
+
+			Button showPassBtn = new Button
+			{
+				Text = "👁",
+				CustomMinimumSize = new Vector2(48, 48),
+				TooltipText = "Show / Hide Security Keycode"
+			};
+			showPassBtn.AddThemeFontSizeOverride("font_size", 16);
+			showPassBtn.Pressed += () =>
+			{
+				_passwordInput.Secret = !_passwordInput.Secret;
+				showPassBtn.Modulate = _passwordInput.Secret ? Colors.White : new Color("#00F0FF");
+			};
+			passRow.AddChild(showPassBtn);
+			_authFormBox.AddChild(passRow);
+
+			// Pre-fill saved commander credentials if available on device
+			if (_supabase != null)
+			{
+				(string savedUser, string savedPass) = _supabase.LoadSavedLoginCredentials();
+				if (!string.IsNullOrEmpty(savedUser)) _usernameInput.Text = savedUser;
+				if (!string.IsNullOrEmpty(savedPass)) _passwordInput.Text = savedPass;
+			}
+
+			_termsCheckBox = new CheckBox
+			{
+				Text = "I accept the Terms, Privacy & © 2026 Copyright Agreement",
+				CustomMinimumSize = new Vector2(0, 36),
+				Visible = false
+			};
+			_termsCheckBox.AddThemeFontSizeOverride("font_size", 13);
+			_termsCheckBox.Modulate = new Color("#FDE68A");
+			_authFormBox.AddChild(_termsCheckBox);
 
 			_submitBtn = new Button();
 			_submitBtn.Text = "AUTHORIZE ACCESS";
-			_submitBtn.CustomMinimumSize = new Vector2(0, 48);
-			_submitBtn.Modulate = new Color(0f, 0.94f, 1f);
+			_submitBtn.CustomMinimumSize = new Vector2(0, 54);
+			_submitBtn.AddThemeFontSizeOverride("font_size", 16);
 			_submitBtn.Pressed += OnSubmitAuth;
 			_authFormBox.AddChild(_submitBtn);
 
@@ -171,8 +219,57 @@ namespace MoonsTotalWar.UI
 		private void SetAuthMode(bool isRegister)
 		{
 			_isRegisterMode = isRegister;
-			_submitBtn.Text = isRegister ? "CREATE ACCOUNT" : "AUTHORIZE ACCESS";
-			_statusLabel.Text = isRegister ? "Register new commander account." : "Enter credentials to log in.";
+
+			Color primaryBorder = isRegister ? new Color("#F59E0B") : new Color("#00F0FF");
+			Color cardBg = isRegister ? new Color(0.11f, 0.05f, 0.04f, 0.96f) : new Color(0.03f, 0.07f, 0.12f, 0.96f);
+
+			if (_centerPanel != null)
+			{
+				StyleBoxFlat panelStyle = new StyleBoxFlat { BgColor = cardBg, BorderColor = primaryBorder };
+				panelStyle.SetCornerRadiusAll(12);
+				panelStyle.SetBorderWidthAll(3);
+				_centerPanel.AddThemeStyleboxOverride("panel", panelStyle);
+			}
+
+			if (_modeBannerPanel != null)
+			{
+				StyleBoxFlat bStyle = new StyleBoxFlat
+				{
+					BgColor = isRegister ? new Color(0.35f, 0.12f, 0.04f, 0.95f) : new Color(0.02f, 0.22f, 0.34f, 0.95f),
+					BorderColor = primaryBorder
+				};
+				bStyle.SetCornerRadiusAll(6);
+				bStyle.SetBorderWidthAll(1);
+				_modeBannerPanel.AddThemeStyleboxOverride("panel", bStyle);
+			}
+
+			if (_modeBannerLabel != null)
+			{
+				_modeBannerLabel.Text = isRegister ? "🎖️ NEW COMMANDER REGISTRATION" : "🔓 EXISTING COMMANDER LOGIN";
+				_modeBannerLabel.Modulate = isRegister ? new Color("#FBBF24") : new Color("#00F0FF");
+			}
+
+			if (_userLbl != null)
+			{
+				_userLbl.Text = isRegister ? "CREATE NEW COMMANDER USERNAME:" : "EXISTING COMMANDER USERNAME:";
+				_userLbl.Modulate = isRegister ? new Color("#FBBF24") : new Color("#38BDF8");
+			}
+
+			if (_passLbl != null)
+			{
+				_passLbl.Text = isRegister ? "CREATE NEW SECURITY KEYCODE:" : "ENTER SECURITY KEYCODE:";
+				_passLbl.Modulate = isRegister ? new Color("#FBBF24") : new Color("#38BDF8");
+			}
+
+			if (_termsCheckBox != null)
+			{
+				_termsCheckBox.Visible = isRegister;
+			}
+
+			_submitBtn.Text = isRegister ? "🎖️ ENLIST & CREATE ACCOUNT" : "🔓 AUTHORIZE COMMAND LOGIN";
+			_submitBtn.Modulate = isRegister ? new Color("#FBBF24") : new Color("#00F0FF");
+			_statusLabel.Text = isRegister ? "Registration Mode: Tick the Terms & Copyright box to enlist." : "Login Mode: Enter your existing Commander credentials.";
+			_statusLabel.Modulate = isRegister ? new Color("#FDE68A") : new Color("#7DD3FC");
 		}
 
 		private async void OnSubmitAuth()
@@ -187,6 +284,13 @@ namespace MoonsTotalWar.UI
 				return;
 			}
 
+			if (_isRegisterMode && (_termsCheckBox == null || !_termsCheckBox.ButtonPressed))
+			{
+				_statusLabel.Text = "REQUIRED: Please tick the Terms & Copyright box before registering.";
+				_statusLabel.Modulate = new Color("#EF4444");
+				return;
+			}
+
 			_statusLabel.Text = "Transmitting authentication request...";
 			_statusLabel.Modulate = Colors.Yellow;
 
@@ -195,9 +299,9 @@ namespace MoonsTotalWar.UI
 				var (success, error) = await _supabase.SignUpAsync(user, pass);
 				if (success)
 				{
-					_statusLabel.Text = "ACCOUNT CREATED! Please log in.";
+					_statusLabel.Text = "ACCOUNT CREATED & AUTHORIZED! Entering Sector...";
 					_statusLabel.Modulate = Colors.Green;
-					SetAuthMode(false);
+					TransitionToServerSelect();
 				}
 				else
 				{
@@ -212,8 +316,7 @@ namespace MoonsTotalWar.UI
 				{
 					_statusLabel.Text = "ACCESS GRANTED! Transitioning...";
 					_statusLabel.Modulate = Colors.Green;
-					
-					GetTree().ChangeSceneToFile("res://Scenes/ServerSelect.tscn");
+					TransitionToServerSelect();
 				}
 				else
 				{
@@ -221,6 +324,31 @@ namespace MoonsTotalWar.UI
 					_statusLabel.Modulate = Colors.Red;
 				}
 			}
+		}
+
+		private void TransitionToServerSelect()
+		{
+			string[] candidates = new[]
+			{
+				"res://Scenes/ServerSelect.tscn",
+				"res://ServerSelect.tscn",
+				"res://Scripts/ServerSelect.tscn",
+				"res://Scenes/BaseView.tscn",
+				"res://base_view.tscn",
+				"res://Scripts/base_view.tscn"
+			};
+			foreach (string path in candidates)
+			{
+				if (ResourceLoader.Exists(path))
+				{
+					GetTree().ChangeSceneToFile(path);
+					return;
+				}
+			}
+			// Fallback: instantiate ServerSelectScene directly if no .tscn wrapper exists
+			var serverSelectNode = new ServerSelectScene();
+			GetTree().Root.AddChild(serverSelectNode);
+			QueueFree();
 		}
 
 		private void OnGenesisSubmit()

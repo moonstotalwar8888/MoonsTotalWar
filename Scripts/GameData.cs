@@ -97,19 +97,25 @@ namespace MoonsTotalWar.Engine
 			new FacilityDef { Id = 10, Code = "trd", Name = "Trade Logistics Lab", Icon = "📦", ColorHex = "#06b6d4", ReqText = "Core Lvl 5", BaseE = 12000, BaseI = 18000, BaseT = 8000, BaseH = 500, Desc = "Galactic commerce network. Enables inter-colony supply transfers and alliance economic aid." },
 			new FacilityDef { Id = 11, Code = "rsh", Name = "Research Directorate", Icon = "🔬", ColorHex = "#a855f7", ReqText = "Core Lvl 7", BaseE = 15000, BaseI = 20000, BaseT = 15000, BaseH = 1000, Desc = "Advanced science division. Unlocks higher-tier warship blueprints and energy technologies." },
 			new FacilityDef { Id = 12, Code = "shd", Name = "Planetary Shield Lab", Icon = "🛡️", ColorHex = "#38bdf8", ReqText = "Core Lvl 7", BaseE = 25000, BaseI = 40000, BaseT = 20000, BaseH = 2000, Desc = "High-yield deflection generator. Mitigates casualty rates during planetary bombardments." },
-			new FacilityDef { Id = 13, Code = "mgd", Name = "Galaxy Gold Exchange", Icon = "💰", ColorHex = "#fbbf24", ReqText = "None", BaseE = 0, BaseI = 0, BaseT = 0, BaseH = 0, Desc = "Universal credit bank. Purchase Galaxy Gold to instantly bypass queues and accelerate production." },
+			new FacilityDef { Id = 13, Code = "mgd", Name = "Galaxy Gold Exchange", Icon = "💰", ColorHex = "#fbbf24", ReqText = "None", BaseE = 0, BaseI = 0, BaseT = 0, BaseH = 0, Desc = "Universal credit bank. Purchase Galaxy Gold for construction queues and empire production boosts." },
 			new FacilityDef { Id = 14, Code = "ahq", Name = "Alliance HQ", Icon = "🏛️", ColorHex = "#38bdf8", ReqText = "Core Lvl 4", BaseE = 6000, BaseI = 8000, BaseT = 4000, BaseH = 500, Desc = "Central embassy for Alliance treaty coordination, member reinforcement rallies, and joint planetary wars." },
 			new FacilityDef { Id = 15, Code = "silo", Name = "Storage Silos", Icon = "🛢️", ColorHex = "#00f0ff", ReqText = "Core Lvl 1", BaseE = 100, BaseI = 100, BaseT = 50, BaseH = 0, Desc = "High-capacity pressurized containment vaults. Expands global storage limits for Energy, Iron, Titanium, and Helium-3." }
 		};
 
 		public static readonly List<ServerDef> Servers = new List<ServerDef>
 		{
-			new ServerDef { Id = "S1", Name = "GENESIS PRIME", Speed = 1f, Status = "ONLINE", Desc = "Standard Speed - The Pioneer Experience" },
-			new ServerDef { Id = "S2", Name = "NEBULA CLUSTER", Speed = 3f, Status = "ONLINE", Desc = "Fast Speed - Accelerated Progression" },
-			new ServerDef { Id = "S3", Name = "VOID RUNNERS", Speed = 5f, Status = "LOCKED", Desc = "Rapid Speed - High Frequency Conflict" },
-			new ServerDef { Id = "S4", Name = "TITAN OVERDRIVE", Speed = 10f, Status = "LOCKED", Desc = "Super Speed - Extreme Resource Wars" },
-			new ServerDef { Id = "S5", Name = "STLLAR STORM", Speed = 15f, Status = "LOCKED", Desc = "Hyper Speed - Advanced Command Protocol" },
-			new ServerDef { Id = "S6", Name = "WARZONE ALPHA", Speed = 20f, Status = "LOCKED", Desc = "TOURNAMENT SERVER - TOTAL ANNIHILATION" }
+			new ServerDef { Id = "S1", Name = "GENESIS PRIME", Speed = 1f, Status = "ONLINE", Desc = "Standard Speed (1x) - The Pioneer Experience" },
+			new ServerDef { Id = "S2", Name = "NEBULA CLUSTER", Speed = 3f, Status = "ONLINE", Desc = "Fast Speed (3x) - Accelerated Progression" },
+			new ServerDef { Id = "S3", Name = "VOID RUNNERS", Speed = 5f, Status = "LOCKED", Desc = "Rapid Speed (5x) - High Frequency Conflict" },
+			new ServerDef { Id = "S4", Name = "TITAN OVERDRIVE", Speed = 10f, Status = "LOCKED", Desc = "Super Speed (10x) - Extreme Resource Wars" },
+			new ServerDef { Id = "S5", Name = "STELLAR STORM", Speed = 15f, Status = "LOCKED", Desc = "Hyper Speed (15x) - Advanced Command Protocol" },
+			new ServerDef { Id = "S6", Name = "WARZONE ALPHA", Speed = 20f, Status = "LOCKED", Desc = "TOURNAMENT SERVER (20x) - TOTAL ANNIHILATION" }
 		};
+
+		public static ServerDef GetServerDef(string serverId)
+		{
+			string clean = string.IsNullOrWhiteSpace(serverId) ? "S1" : serverId.Trim().ToUpper();
+			return Servers.Find(s => string.Equals(s.Id, clean, System.StringComparison.OrdinalIgnoreCase)) ?? Servers[0];
+		}
 	}
 }
